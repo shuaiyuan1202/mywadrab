@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#FDFCF9">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3534/3534312.png">
-    <title>我的智能衣橱 - 长期主义洗护专家</title>
-    <!-- 引入 Vue 和 Tailwind -->
+    <title>我的智能衣橱 - Cloudinary 增强版</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- 引入 SHA-1 库用于 Cloudinary 删除签名 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha1/0.6.0/sha1.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     
     <style>
@@ -23,19 +22,17 @@
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .loader-ring { border: 2px solid #f3f3f3; border-top: 2px solid #0f172a; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .dot-pulse { animation: dot-pulse 1.5s infinite; }
-        @keyframes dot-pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
     </style>
 </head>
 <body>
     <div id="app" v-cloak class="min-h-screen flex flex-col relative overflow-x-hidden">
         
-        <!-- 全屏加载遮罩层 (AI分析时) -->
-        <div v-if="loading" class="fixed inset-0 z-[100] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-10 animate-in fade-in duration-300">
+        <!-- 全屏加载遮罩层 -->
+        <div v-if="loading" class="fixed inset-0 z-[100] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-10">
             <div class="loader-ring mb-6"></div>
             <div class="text-center space-y-3">
                 <p class="text-slate-900 font-serif-sc text-lg loading-pulse">{{ currentLoadingMessage }}</p>
-                <p class="text-slate-400 text-xs tracking-widest uppercase">Gemini AI Engine Analyzing</p>
+                <p class="text-slate-400 text-xs tracking-widest uppercase">Cloudinary & Gemini Processing</p>
             </div>
         </div>
 
@@ -43,16 +40,12 @@
         <header class="sticky top-0 z-30 glass-effect border-b border-slate-100 px-6 py-4 flex justify-between items-center">
             <h1 class="text-xl font-serif-sc text-slate-900">我的衣橱</h1>
             <div class="flex items-center gap-3">
-                <!-- 云端连接状态指示灯 -->
                 <div class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-50 border border-slate-100">
-                    <div class="w-2 h-2 rounded-full" 
-                         :class="[cloudStatus === 'connected' ? 'bg-green-500' : cloudStatus === 'error' ? 'bg-red-500' : 'bg-slate-300 dot-pulse']">
-                    </div>
+                    <div class="w-2 h-2 rounded-full" :class="[isCloudConfigured ? 'bg-green-500' : 'bg-amber-400']"></div>
                     <span class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                        {{ cloudStatus === 'connected' ? 'Cloud On' : cloudStatus === 'error' ? 'Offline' : 'Syncing' }}
+                        {{ isCloudConfigured ? 'Cloudinary Ready' : 'Cloud Not Set' }}
                     </span>
                 </div>
-                
                 <button @click="showSettings = true" class="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400">
                     <span v-html="getIcon('settings', 'w-5 h-5')"></span>
                 </button>
@@ -62,95 +55,83 @@
         <!-- 设置弹窗 -->
         <div v-if="showSettings" class="fixed inset-0 z-50 flex items-center justify-center p-6">
             <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showSettings = false"></div>
-            <div class="relative w-full max-w-sm bg-white rounded-[24px] p-6 shadow-2xl">
-                <h3 class="font-bold text-slate-900 mb-4 text-left">设置</h3>
-                <div class="space-y-4">
+            <div class="relative w-full max-w-sm bg-white rounded-[24px] p-6 shadow-2xl overflow-y-auto max-h-[85vh]">
+                <h3 class="font-bold text-slate-900 mb-4 text-left">设置中心</h3>
+                <div class="space-y-6">
                     <div class="space-y-1">
                         <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block text-left">Gemini API Key</label>
-                        <input v-model="tempApiKey" type="password" placeholder="粘贴您的 API Key" 
-                               class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-amber-200 outline-none">
+                        <input v-model="tempApiKey" type="password" placeholder="粘贴您的 API Key" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm outline-none">
                     </div>
-                    <div class="p-3 bg-amber-50 rounded-xl text-[10px] text-amber-700 leading-relaxed text-left">
-                        数据已加密存储于云端，更换设备或更新 App 均可无缝同步。
+
+                    <div class="border-t border-slate-100 pt-4">
+                        <h4 class="text-xs font-bold text-slate-900 mb-3 text-left">Cloudinary 配置</h4>
+                        <div class="space-y-3">
+                            <input v-model="tempCloudName" type="text" placeholder="Cloud Name" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm outline-none">
+                            <input v-model="tempUploadPreset" type="text" placeholder="Unsigned Upload Preset" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm outline-none">
+                            <div class="p-3 bg-blue-50 rounded-xl">
+                                <p class="text-[10px] text-blue-600 font-bold mb-2 uppercase tracking-tight">同步删除功能 (可选)</p>
+                                <input v-model="tempClApiKey" type="text" placeholder="Cloudinary API Key" class="w-full bg-white border border-blue-100 rounded-lg px-3 py-2 text-[10px] outline-none mb-2">
+                                <input v-model="tempClApiSecret" type="password" placeholder="Cloudinary API Secret" class="w-full bg-white border border-blue-100 rounded-lg px-3 py-2 text-[10px] outline-none">
+                                <p class="text-[9px] text-blue-400 mt-2 leading-tight">填写 Secret 即可启用“云端同步删除”。数据仅本地加密存储。</p>
+                            </div>
+                        </div>
                     </div>
-                    <button @click="saveSettings" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-lg">保存配置</button>
+
+                    <button @click="saveSettings" class="w-full py-4 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all">保存设置</button>
                 </div>
             </div>
         </div>
 
         <!-- 首页 -->
         <main v-if="currentView === 'home'" class="flex-1 p-6 pb-32 animate-in fade-in">
-            <!-- 状态 1: 初始连接/同步中 -->
-            <div v-if="isSyncing" class="flex flex-col items-center justify-center py-24 text-slate-300">
-                <div class="loader-ring mb-6 opacity-30"></div>
-                <p class="text-sm font-medium">正在连接云端数据库...</p>
-                <p class="text-[10px] mt-2 tracking-widest opacity-50">INITIALIZING FIRESTORE</p>
-            </div>
-
-            <!-- 状态 2: 连接成功但无数据 (真正的空状态) -->
-            <div v-else-if="wardrobe.length === 0" class="flex flex-col items-center justify-center py-24 text-slate-300">
+            <div v-if="wardrobe.length === 0" class="flex flex-col items-center justify-center py-24 text-slate-300">
                 <div class="p-6 bg-white rounded-full shadow-inner mb-6">
                     <span v-html="getIcon('shirt', 'w-12 h-12 opacity-20')"></span>
                 </div>
-                <p class="text-slate-500 font-medium">衣橱空空如也</p>
-                <p class="text-xs mt-2">点击下方按钮开启你的智能衣橱</p>
-                <button @click="goAdd" class="text-amber-600 text-xs mt-6 font-bold underline decoration-2 underline-offset-4">立即录入第一件衣物</button>
+                <p class="text-slate-500 font-medium">衣橱目前是空的</p>
+                <button @click="goAdd" class="text-amber-600 text-xs mt-6 font-bold underline decoration-2 underline-offset-4">立即录入</button>
             </div>
             
-            <!-- 状态 3: 数据列表 -->
             <div v-else class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 <div v-for="item in wardrobe" :key="item.id" @click="showDetail(item)"
                      class="group bg-white rounded-2xl overflow-hidden card-shadow border border-slate-50 cursor-pointer active:scale-95 transition-all">
                     <div class="aspect-[3/4] bg-slate-100 relative overflow-hidden">
-                        <img :src="item.itemImage" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                        <img :src="item.itemImage" class="w-full h-full object-cover">
                     </div>
                     <div class="p-3 text-left">
                         <h3 class="font-medium text-slate-800 truncate text-sm">{{ item.name }}</h3>
-                        <p class="text-[10px] text-slate-400 mt-1 uppercase tracking-tight">{{ item.analysis.composition_summary }}</p>
+                        <p class="text-[10px] text-slate-400 mt-1 uppercase">{{ item.analysis?.composition_summary || '已存入' }}</p>
                     </div>
                 </div>
-            </div>
-
-            <!-- 错误提示（如果同步失败） -->
-            <div v-if="cloudStatus === 'error'" class="mt-4 p-4 bg-red-50 rounded-2xl border border-red-100 flex flex-col items-center">
-                <span class="text-xs text-red-600 font-bold mb-1">连接中断</span>
-                <p class="text-[10px] text-red-400 text-center">请检查网络连接或应用权限配置。数据目前无法同步。</p>
             </div>
         </main>
 
         <!-- 新增视图 -->
         <main v-if="currentView === 'add'" class="flex-1 p-6 animate-in slide-in-from-bottom-4">
             <div class="max-w-xl mx-auto space-y-6 text-left">
-                <div class="flex items-center gap-2 cursor-pointer group" @click="goHome">
-                    <span v-html="getIcon('chevron-left', 'w-5 h-5 text-slate-300 group-hover:text-slate-900 transition-colors')"></span>
-                    <span class="text-slate-400 text-sm group-hover:text-slate-900">返回我的衣橱</span>
+                <div class="flex items-center gap-2 cursor-pointer" @click="goHome">
+                    <span v-html="getIcon('chevron-left', 'w-5 h-5 text-slate-400')"></span>
+                    <span class="text-slate-400 text-sm">返回衣橱</span>
                 </div>
-                <h2 class="text-2xl font-serif-sc text-slate-900">新增衣物识别</h2>
+                <h2 class="text-2xl font-serif-sc">识别并存储</h2>
+                <input v-model="newItem.name" type="text" placeholder="衣服名称（如：米色羊毛西装）" class="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 outline-none">
                 
                 <div class="space-y-2">
-                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">衣物名称</label>
-                    <input v-model="newItem.name" type="text" placeholder="例如：灰色羊绒衫" class="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 outline-none focus:ring-2 focus:ring-amber-100 transition-all">
-                </div>
-                
-                <div class="space-y-2">
-                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">实物照片</label>
-                    <div @click="triggerFile('itemImage')" class="aspect-video bg-white border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden cursor-pointer hover:border-amber-200 transition-colors">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">展示照片</label>
+                    <div @click="triggerFile('itemImage')" class="aspect-video bg-white border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden cursor-pointer">
                         <img v-if="newItem.itemImage" :src="newItem.itemImage" class="w-full h-full object-cover">
-                        <div v-else class="text-center">
-                            <span v-html="getIcon('camera', 'w-8 h-8 text-slate-200 mx-auto')"></span>
-                            <p class="text-xs text-slate-300 mt-2">点击拍摄实物图</p>
-                        </div>
+                        <span v-else v-html="getIcon('camera', 'w-8 h-8 text-slate-200')"></span>
                     </div>
                 </div>
 
                 <div class="space-y-2">
-                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">水洗标 (最多2张)</label>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase ml-1">洗水标/面料详情</label>
                     <div class="grid grid-cols-2 gap-4">
-                        <div v-for="(img, idx) in newItem.labelImages" :key="idx" class="aspect-square rounded-2xl overflow-hidden relative border border-slate-100">
+                        <div v-for="(img, idx) in newItem.labelImages" :key="idx" class="aspect-square rounded-2xl overflow-hidden relative">
                             <img :src="img" class="w-full h-full object-cover">
                             <button @click="newItem.labelImages.splice(idx,1)" class="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1"><span v-html="getIcon('x', 'w-3 h-3')"></span></button>
                         </div>
-                        <div v-if="newItem.labelImages.length < 2" @click="triggerFile('labelImage')" class="aspect-square border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center cursor-pointer hover:border-amber-200">
+                        <div v-if="newItem.labelImages.length < 2" @click="triggerFile('labelImage')" class="aspect-square border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center cursor-pointer">
                             <span v-html="getIcon('plus', 'w-5 h-5 text-slate-200')"></span>
                         </div>
                     </div>
@@ -158,76 +139,71 @@
 
                 <input type="file" ref="itemImageInput" hidden accept="image/*" @change="handleFile($event, 'itemImage')">
                 <input type="file" ref="labelImageInput" hidden accept="image/*" @change="handleFile($event, 'labelImage')">
-
-                <button @click="startAnalysis" :disabled="!isReadyToAnalyze || loading" class="w-full py-5 rounded-2xl font-bold bg-slate-900 text-white disabled:bg-slate-200 shadow-xl active:scale-95 transition-all">
-                    开始 AI 专家识别
-                </button>
+                
+                <button @click="startAnalysis" :disabled="!isReadyToAnalyze || loading" class="w-full py-5 rounded-2xl font-bold bg-slate-900 text-white disabled:bg-slate-200 transition-all shadow-lg">开始 AI 分析</button>
             </div>
         </main>
 
-        <!-- 详情弹窗 -->
-        <div v-if="showResultModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in">
+        <!-- 详情/结果弹窗 -->
+        <div v-if="showResultModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6">
             <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeResult"></div>
-            <div class="relative w-full max-w-2xl bg-white rounded-t-[32px] sm:rounded-[32px] shadow-2xl max-h-[90vh] overflow-y-auto safe-area-bottom">
-                <div v-if="!isNewItem" class="relative aspect-[16/9]">
+            <div class="relative w-full max-w-2xl bg-white rounded-t-[32px] sm:rounded-[32px] shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div v-if="!isNewItem" class="relative aspect-[16/9] bg-slate-100">
                     <img :src="selectedItem.itemImage" class="w-full h-full object-cover">
-                    <div class="absolute inset-0 flex items-end justify-center p-4">
-                        <button @click="triggerFile('editImage')" class="bg-white/20 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-medium border border-white/10">更换封面照片</button>
-                    </div>
-                    <input type="file" ref="editImageInput" hidden accept="image/*" @change="handleFile($event, 'editImage')">
                 </div>
-                
-                <div class="p-8 space-y-8 text-left">
+                <div class="p-8 space-y-6 text-left">
                     <div class="flex justify-between items-start">
                         <div>
-                            <h3 class="text-2xl font-serif-sc text-slate-900">{{ isNewItem ? '面料分析报告' : selectedItem.name }}</h3>
-                            <p v-if="!isNewItem" class="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Archive #{{ selectedItem.id.toString().slice(-6) }}</p>
+                            <h3 class="text-2xl font-serif-sc text-slate-900">{{ isNewItem ? '识别结果' : selectedItem.name }}</h3>
+                            <p v-if="!isNewItem" class="text-[10px] text-slate-400 uppercase mt-1">入库时间: {{ formatDate(selectedItem.createdAt) }}</p>
                         </div>
-                        <button @click="closeResult" class="p-2 hover:bg-slate-50 rounded-full"><span v-html="getIcon('x', 'w-6 h-6 text-slate-300')"></span></button>
+                        <button @click="closeResult"><span v-html="getIcon('x', 'w-6 h-6 text-slate-300')"></span></button>
                     </div>
 
-                    <div class="space-y-6">
-                        <div>
-                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-3">成分构成</span>
+                    <!-- 面料成分展示优化 -->
+                    <div v-if="currentAnalysis" class="space-y-6">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">面料成分</label>
                             <div class="flex flex-wrap gap-2">
-                                <div v-for="(val, key) in currentAnalysis.composition" :key="key" class="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-xs">
-                                    <span class="text-slate-500">{{ key }}</span> <span class="font-bold text-amber-600 ml-1">{{ val }}</span>
-                                </div>
+                                <template v-for="(v, k) in parsedComposition" :key="k">
+                                    <div class="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl">
+                                        <span class="text-xs font-bold text-slate-700">{{ k }}</span>
+                                        <span class="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-mono">{{ v }}</span>
+                                    </div>
+                                </template>
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 gap-6">
-                            <div class="flex gap-4">
-                                <div class="w-10 h-10 shrink-0 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 font-bold text-sm">洗</div>
-                                <div>
-                                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">洗涤指南</h4>
-                                    <p class="text-sm text-slate-600 leading-relaxed">{{ currentAnalysis.laundry_guide }}</p>
-                                </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="p-4 bg-slate-50 rounded-2xl">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase block mb-2 tracking-widest">洗涤建议</label>
+                                <p class="text-sm text-slate-600 leading-relaxed">{{ currentAnalysis.laundry_guide }}</p>
                             </div>
-                            <div class="flex gap-4">
-                                <div class="w-10 h-10 shrink-0 bg-slate-900 rounded-xl flex items-center justify-center text-amber-400 font-bold text-sm">专</div>
-                                <div>
-                                    <h4 class="text-xs font-bold text-amber-400 uppercase tracking-widest mb-1">质感观察</h4>
-                                    <p class="text-sm text-slate-200 bg-slate-900 p-4 rounded-2xl italic leading-relaxed">{{ currentAnalysis.luxury_insight }}</p>
-                                </div>
+                            <div class="p-4 bg-slate-50 rounded-2xl">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase block mb-2 tracking-widest">干燥/熨烫</label>
+                                <p class="text-sm text-slate-600 leading-relaxed">{{ currentAnalysis.drying_guide }} / {{ currentAnalysis.iron_guide }}</p>
                             </div>
                         </div>
-                        
-                        <div class="pt-4 border-t border-slate-50">
-                            <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">长期保鲜方案</h4>
-                            <p class="text-sm text-slate-500 leading-relaxed">{{ currentAnalysis.long_term_tips }}</p>
+
+                        <div class="p-5 bg-slate-900 rounded-2xl relative overflow-hidden">
+                            <div class="absolute -right-4 -top-4 opacity-10 text-white">
+                                <span v-html="getIcon('sparkles', 'w-24 h-24')"></span>
+                            </div>
+                            <label class="text-[10px] font-bold text-amber-400/60 uppercase block mb-2 tracking-widest">高端洞察</label>
+                            <p class="text-sm text-amber-100 leading-relaxed italic relative z-10">{{ currentAnalysis.luxury_insight }}</p>
                         </div>
                     </div>
-
-                    <div v-if="isNewItem" class="flex gap-4 pt-6">
+                    
+                    <div v-if="isNewItem" class="flex gap-4 pt-4">
                         <button @click="closeResult" class="flex-1 py-4 bg-slate-50 rounded-2xl font-bold text-slate-400">放弃</button>
-                        <button @click="saveToWardrobe" :disabled="isSaving" class="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl shadow-slate-900/20 active:scale-95 transition-all">
-                            {{ isSaving ? '同步中...' : '确认存入云端' }}
+                        <button @click="saveToWardrobe" :disabled="isSaving" class="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl active:scale-95 transition-all">
+                            {{ isSaving ? '同步中...' : '确认入库' }}
                         </button>
                     </div>
-                    <div v-else class="pt-4 text-center">
-                        <button @click="deleteItem" class="text-red-400 text-xs font-medium flex items-center gap-1 mx-auto hover:opacity-70">
-                            <span v-html="getIcon('trash-2', 'w-3 h-3')"></span> 移出衣橱
+                    <div v-else class="pt-4 flex flex-col items-center gap-4">
+                        <button @click="deleteItem" :disabled="isDeleting" class="text-red-400 text-xs font-medium flex items-center gap-1 hover:opacity-70 transition-opacity">
+                            <span v-html="getIcon(isDeleting ? 'loader' : 'trash-2', 'w-3 h-3 ' + (isDeleting ? 'animate-spin' : ''))"></span> 
+                            {{ isDeleting ? '正在从云端移除...' : '移除此衣物' }}
                         </button>
                     </div>
                 </div>
@@ -242,19 +218,7 @@
         </footer>
     </div>
 
-    <!-- Firebase SDK 模块化引入 -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // 获取外部注入配置
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'wardrobe-pro';
-
+    <script>
         const { createApp, ref, computed, onMounted, nextTick } = Vue;
 
         createApp({
@@ -263,88 +227,89 @@
                 const currentView = ref('home');
                 const loading = ref(false);
                 const isSaving = ref(false);
-                const isSyncing = ref(true);
-                const cloudStatus = ref('connecting'); // connecting, connected, error
-                const user = ref(null);
+                const isDeleting = ref(false);
+                const showSettings = ref(false);
                 
-                const currentLoadingMessage = ref('正在启动 AI 引擎...');
-                const loadingMessages = ['识别纤维结构...', '计算面料耐受度...', '生成洗护配比...', '正在撰写建议...'];
+                // 配置信息
+                const apiKey = ref(localStorage.getItem('gemini_api_key') || '');
+                const cloudName = ref(localStorage.getItem('cl_cloud_name') || '');
+                const uploadPreset = ref(localStorage.getItem('cl_upload_preset') || '');
+                const clApiKey = ref(localStorage.getItem('cl_api_key') || '');
+                const clApiSecret = ref(localStorage.getItem('cl_api_secret') || '');
                 
+                const tempApiKey = ref(apiKey.value);
+                const tempCloudName = ref(cloudName.value);
+                const tempUploadPreset = ref(uploadPreset.value);
+                const tempClApiKey = ref(clApiKey.value);
+                const tempClApiSecret = ref(clApiSecret.value);
+
+                const currentLoadingMessage = ref('正在分析衣服...');
                 const showResultModal = ref(false);
                 const isNewItem = ref(false);
-                const showSettings = ref(false);
-                const apiKey = ref(localStorage.getItem('gemini_api_key') || '');
-                const tempApiKey = ref(apiKey.value);
-
+                
                 const itemImageInput = ref(null);
                 const labelImageInput = ref(null);
-                const editImageInput = ref(null);
                 const newItem = ref({ name: '', itemImage: null, labelImages: [] });
                 const selectedItem = ref(null);
                 const currentAnalysis = ref(null);
 
-                // Firebase 认证初始化
-                onMounted(async () => {
-                    try {
-                        const initAuth = async () => {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
-                        };
-                        await initAuth();
-                        onAuthStateChanged(auth, (u) => {
-                            user.value = u;
-                            if (u) {
-                                console.log("Auth Success:", u.uid);
-                                subscribeToWardrobe();
+                const isCloudConfigured = computed(() => !!(cloudName.value && uploadPreset.value));
+
+                // 解析成分数据逻辑，应对 AI 不同的返回格式
+                const parsedComposition = computed(() => {
+                    if (!currentAnalysis.value || !currentAnalysis.value.composition) return {};
+                    const raw = currentAnalysis.value.composition;
+                    if (typeof raw === 'object' && !Array.isArray(raw)) return raw;
+                    if (Array.isArray(raw)) {
+                        // 如果返回的是数组形式
+                        const obj = {};
+                        raw.forEach(item => {
+                            if (typeof item === 'string') {
+                                const parts = item.split(/[:：\s]/);
+                                if (parts.length >= 2) obj[parts[0]] = parts[1];
+                            } else if (item.name && item.value) {
+                                obj[item.name] = item.value;
                             }
                         });
-                    } catch (err) {
-                        console.error("Auth Fail:", err);
-                        cloudStatus.value = 'error';
-                        isSyncing.value = false;
+                        return obj;
                     }
+                    if (typeof raw === 'string') {
+                        const obj = {};
+                        raw.split(/[,，;；\n]/).forEach(s => {
+                            const parts = s.split(/[:：]/);
+                            if (parts.length >= 2) obj[parts[0].trim()] = parts[1].trim();
+                        });
+                        return obj;
+                    }
+                    return { "识别结果": "请查看摘要" };
                 });
 
-                // 订阅云端数据
-                const subscribeToWardrobe = () => {
-                    if (!user.value) return;
-                    // RULE 1: 使用严格路径
-                    const q = collection(db, 'artifacts', appId, 'public', 'data', 'clothes');
-                    
-                    onSnapshot(q, (snapshot) => {
-                        wardrobe.value = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
-                            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-                        isSyncing.value = false;
-                        cloudStatus.value = 'connected';
-                    }, (err) => {
-                        console.error("Firestore Error:", err);
-                        cloudStatus.value = 'error';
-                        isSyncing.value = false;
-                    });
-                };
+                onMounted(() => {
+                    loadWardrobe();
+                    nextTick(() => lucide.createIcons());
+                });
 
-                // 图片极致压缩
-                const compressImage = (base64, maxWidth = 400, quality = 0.6) => {
-                    return new Promise((resolve) => {
-                        const img = new Image();
-                        img.src = base64;
-                        img.onload = () => {
-                            const canvas = document.createElement('canvas');
-                            let w = img.width, h = img.height;
-                            if (w > maxWidth) { h = (maxWidth / w) * h; w = maxWidth; }
-                            canvas.width = w; canvas.height = h;
-                            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                            resolve(canvas.toDataURL('image/jpeg', quality));
-                        };
-                    });
+                const loadWardrobe = () => {
+                    const saved = localStorage.getItem('my_smart_wardrobe_data');
+                    if (saved) {
+                        try {
+                            wardrobe.value = JSON.parse(saved).sort((a, b) => b.createdAt - a.createdAt);
+                        } catch (e) { wardrobe.value = []; }
+                    }
                 };
 
                 const saveSettings = () => {
-                    apiKey.value = tempApiKey.value;
                     localStorage.setItem('gemini_api_key', tempApiKey.value);
+                    localStorage.setItem('cl_cloud_name', tempCloudName.value);
+                    localStorage.setItem('cl_upload_preset', tempUploadPreset.value);
+                    localStorage.setItem('cl_api_key', tempClApiKey.value);
+                    localStorage.setItem('cl_api_secret', tempClApiSecret.value);
+                    
+                    apiKey.value = tempApiKey.value;
+                    cloudName.value = tempCloudName.value;
+                    uploadPreset.value = tempUploadPreset.value;
+                    clApiKey.value = tempClApiKey.value;
+                    clApiSecret.value = tempClApiSecret.value;
                     showSettings.value = false;
                 };
 
@@ -360,23 +325,27 @@
                 const resetNewItem = () => { newItem.value = { name: '', itemImage: null, labelImages: [] }; isNewItem.value = false; };
 
                 const triggerFile = (type) => {
-                    const el = { itemImage: itemImageInput, labelImage: labelImageInput, editImage: editImageInput }[type];
-                    if (el.value) el.value.click();
+                    const el = type === 'itemImage' ? itemImageInput.value : labelImageInput.value;
+                    if (el) el.click();
                 };
 
                 const handleFile = async (event, type) => {
                     const file = event.target.files[0];
                     if (!file) return;
                     const reader = new FileReader();
-                    reader.onload = async (e) => {
-                        const compressed = await compressImage(e.target.result);
-                        if (type === 'itemImage') newItem.value.itemImage = compressed;
-                        else if (type === 'labelImage') newItem.value.labelImages.push(compressed);
-                        else if (type === 'editImage' && selectedItem.value) {
-                            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clothes', selectedItem.value.id), {
-                                itemImage: compressed
-                            });
-                        }
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.src = e.target.result;
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            let w = img.width, h = img.height, max = 1024;
+                            if (w > max) { h = (max/w)*h; w = max; }
+                            canvas.width = w; canvas.height = h;
+                            canvas.getContext('2d').drawImage(img,0,0,w,h);
+                            const compressed = canvas.toDataURL('image/jpeg', 0.85);
+                            if (type === 'itemImage') newItem.value.itemImage = compressed;
+                            else newItem.value.labelImages.push(compressed);
+                        };
                     };
                     reader.readAsDataURL(file);
                 };
@@ -384,20 +353,15 @@
                 const startAnalysis = async () => {
                     if (!apiKey.value) { showSettings.value = true; return; }
                     loading.value = true;
-                    let mIdx = 0;
-                    const timer = setInterval(() => {
-                        currentLoadingMessage.value = loadingMessages[mIdx++ % loadingMessages.length];
-                    }, 2000);
-
+                    currentLoadingMessage.value = '正在通过 Gemini 识封面料信息...';
+                    
                     const b64s = newItem.value.labelImages.map(img => img.split(',')[1]);
                     const payload = {
-                        contents: [{
-                            parts: [
-                                { text: `分析名为"${newItem.value.name}"的衣物标签图。识别纤维比例、洗护、晾晒、熨烫、质感分析、长期建议。JSON。` },
-                                ...b64s.map(b => ({ inlineData: { mimeType: "image/jpeg", data: b } }))
-                            ]
-                        }],
-                        systemInstruction: { parts: [{ text: "面料专家。JSON：{composition, composition_summary, laundry_guide, drying_guide, iron_guide, luxury_insight, long_term_tips}。中文回复。" }] },
+                        contents: [{ parts: [
+                            { text: `分析衣服"${newItem.value.name}"。JSON输出。` },
+                            ...b64s.map(b => ({ inlineData: { mimeType: "image/jpeg", data: b } }))
+                        ]}],
+                        systemInstruction: { parts: [{ text: "你是面料与奢侈品护理专家。请输出 JSON 对象：{composition (对象格式，如{'羊毛':'100%'}), composition_summary, laundry_guide, drying_guide, iron_guide, luxury_insight, long_term_tips}。" }] },
                         generationConfig: { responseMimeType: "application/json" }
                     };
 
@@ -409,25 +373,85 @@
                         isNewItem.value = true;
                         showResultModal.value = true;
                         nextTick(() => lucide.createIcons());
-                    } catch (err) { alert("AI 分析请求失败，请检查 Key 或网络。"); }
-                    finally { clearInterval(timer); loading.value = false; }
+                    } catch (err) {
+                        alert("AI 分析失败，请检查 API Key。");
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                // 增强后的 Cloudinary 上传：记录 public_id
+                const uploadToCloudinary = async (base64) => {
+                    if (!cloudName.value || !uploadPreset.value) return { url: base64, publicId: null };
+                    
+                    const formData = new FormData();
+                    formData.append('file', base64);
+                    formData.append('upload_preset', uploadPreset.value);
+
+                    try {
+                        const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName.value}/image/upload`, {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await res.json();
+                        return { url: data.secure_url, publicId: data.public_id };
+                    } catch (e) {
+                        return { url: base64, publicId: null };
+                    }
+                };
+
+                // Cloudinary 物理删除逻辑
+                const deleteFromCloudinary = async (publicId) => {
+                    if (!publicId || !clApiKey.value || !clApiSecret.value || !cloudName.value) return false;
+                    
+                    const timestamp = Math.round((new Date()).getTime() / 1000);
+                    const stringToSign = `public_id=${publicId}&timestamp=${timestamp}${clApiSecret.value}`;
+                    const signature = sha1(stringToSign);
+
+                    const formData = new FormData();
+                    formData.append('public_id', publicId);
+                    formData.append('timestamp', timestamp);
+                    formData.append('api_key', clApiKey.value);
+                    formData.append('signature', signature);
+
+                    try {
+                        await fetch(`https://api.cloudinary.com/v1_1/${cloudName.value}/image/destroy`, {
+                            method: 'POST',
+                            body: formData
+                        });
+                        return true;
+                    } catch (e) {
+                        console.error("Cloudinary Delete Failed", e);
+                        return false;
+                    }
                 };
 
                 const saveToWardrobe = async () => {
-                    if (!user.value) return;
                     isSaving.value = true;
+                    currentLoadingMessage.value = '正在上传图片至云端...';
+                    
                     try {
-                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'clothes'), {
+                        const uploadRes = await uploadToCloudinary(newItem.value.itemImage);
+                        
+                        const itemToAdd = {
+                            id: Date.now().toString(),
                             name: newItem.value.name,
-                            itemImage: newItem.value.itemImage,
+                            itemImage: uploadRes.url,
+                            publicId: uploadRes.publicId, // 存入 ID 以便后续删除
                             analysis: currentAnalysis.value,
-                            createdAt: Date.now(),
-                            uid: user.value.uid
-                        });
+                            createdAt: Date.now()
+                        };
+                        
+                        wardrobe.value.unshift(itemToAdd);
+                        localStorage.setItem('my_smart_wardrobe_data', JSON.stringify(wardrobe.value));
+                        
                         showResultModal.value = false;
                         goHome();
-                    } catch (e) { alert("云端同步失败，请检查网络权限。"); }
-                    finally { isSaving.value = false; }
+                    } catch (e) {
+                        alert("保存失败");
+                    } finally {
+                        isSaving.value = false;
+                    }
                 };
 
                 const showDetail = (item) => { 
@@ -439,21 +463,33 @@
                 };
 
                 const deleteItem = async () => {
-                    if (!selectedItem.value) return;
-                    if (confirm("确定要从云端永久移除吗？")) {
-                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clothes', selectedItem.value.id));
-                        showResultModal.value = false;
+                    if (!confirm("确定要移除这件衣服并从云端删除图片吗？")) return;
+                    
+                    isDeleting.value = true;
+                    const itemToDelete = selectedItem.value;
+
+                    // 如果有云端 ID 且配置了 Secret，则尝试物理删除
+                    if (itemToDelete.publicId && clApiSecret.value) {
+                        await deleteFromCloudinary(itemToDelete.publicId);
                     }
+
+                    wardrobe.value = wardrobe.value.filter(i => i.id !== itemToDelete.id);
+                    localStorage.setItem('my_smart_wardrobe_data', JSON.stringify(wardrobe.value));
+                    
+                    isDeleting.value = false;
+                    showResultModal.value = false;
                 };
 
-                const closeResult = () => { if(!isSaving.value) { showResultModal.value = false; selectedItem.value = null; } };
+                const closeResult = () => { if(!isSaving.value && !isDeleting.value) { showResultModal.value = false; selectedItem.value = null; } };
                 const isReadyToAnalyze = computed(() => newItem.value.name && newItem.value.itemImage && newItem.value.labelImages.length > 0);
+                const formatDate = (ts) => new Date(ts).toLocaleDateString('zh-CN');
 
                 return {
-                    wardrobe, currentView, newItem, loading, isSaving, isSyncing, cloudStatus, showResultModal, currentAnalysis, isNewItem, isReadyToAnalyze, selectedItem,
-                    showSettings, tempApiKey, apiKey, currentLoadingMessage,
-                    itemImageInput, labelImageInput, editImageInput,
-                    getIcon, goHome, goAdd, handleFile, triggerFile, startAnalysis, saveToWardrobe, showDetail, closeResult, saveSettings, deleteItem
+                    wardrobe, currentView, newItem, loading, isSaving, isDeleting, showResultModal, currentAnalysis, isNewItem, isReadyToAnalyze, selectedItem,
+                    showSettings, tempApiKey, apiKey, tempCloudName, tempUploadPreset, isCloudConfigured,
+                    tempClApiKey, tempClApiSecret, clApiKey, clApiSecret,
+                    itemImageInput, labelImageInput, currentLoadingMessage, parsedComposition,
+                    getIcon, goHome, goAdd, handleFile, triggerFile, startAnalysis, saveToWardrobe, showDetail, closeResult, saveSettings, deleteItem, formatDate
                 };
             }
         }).mount('#app');
