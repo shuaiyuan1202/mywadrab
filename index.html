@@ -14,17 +14,37 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #FDFCF9; }
+        body { font-family: 'Inter', sans-serif; background-color: #FDFCF9; -webkit-tap-highlight-color: transparent; }
         .font-serif-sc { font-family: 'Noto Serif SC', serif; }
         .glass-effect { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); }
         .card-shadow { box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.05); }
         .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
         [v-cloak] { display: none; }
         .img-edit-overlay { background: linear-gradient(to top, rgba(0,0,0,0.6), transparent); }
+        
+        /* 加载动画相关样式 */
+        .loading-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .7; transform: scale(1.05); } }
+        .loader-ring { border: 2px solid #f3f3f3; border-top: 2px solid #0f172a; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
-    <div id="app" v-cloak class="min-h-screen flex flex-col">
+    <div id="app" v-cloak class="min-h-screen flex flex-col relative overflow-x-hidden">
+        
+        <!-- 全屏加载遮罩层 -->
+        <div v-if="loading" class="fixed inset-0 z-[100] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-10 animate-in fade-in duration-300">
+            <div class="loader-ring mb-6"></div>
+            <div class="text-center space-y-3">
+                <p class="text-slate-900 font-serif-sc text-lg loading-pulse">{{ currentLoadingMessage }}</p>
+                <p class="text-slate-400 text-xs tracking-widest uppercase">Gemini AI Engine Analyzing</p>
+            </div>
+            <!-- 进度指示点 -->
+            <div class="flex gap-2 mt-8">
+                <div v-for="i in 3" :key="i" class="w-1.5 h-1.5 rounded-full bg-slate-200" :class="{'bg-slate-800 scale-125 transition-all duration-500': activeDot === i}"></div>
+            </div>
+        </div>
+
         <!-- 页面顶部 -->
         <header class="sticky top-0 z-30 glass-effect border-b border-slate-100 px-6 py-4 flex justify-between items-center">
             <h1 class="text-xl font-serif-sc text-slate-900">我的衣橱</h1>
@@ -32,7 +52,6 @@
                 <div v-if="currentView === 'home'" class="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-1 rounded-md">
                     {{ wardrobe.length }} 件
                 </div>
-                <!-- 设置按钮 -->
                 <button @click="showSettings = true" class="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400">
                     <span v-html="getIcon('settings', 'w-5 h-5')"></span>
                 </button>
@@ -48,10 +67,10 @@
                     <button @click="showSettings = false" class="text-slate-300"><span v-html="getIcon('x', 'w-5 h-5')"></span></button>
                 </div>
                 <div class="space-y-4 text-left">
-                    <p class="text-xs text-slate-400 leading-relaxed text-left">请输入您的 Gemini API Key。Key 将仅保存在您的浏览器本地，不会上传到服务器。</p>
+                    <p class="text-xs text-slate-400 leading-relaxed text-left">请输入您的 Gemini API Key。数据将保存在您的浏览器本地，更新代码不会丢失已有数据。</p>
                     <input v-model="tempApiKey" type="password" placeholder="粘贴您的 API Key" 
                            class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-amber-200 outline-none text-left">
-                    <button @click="saveSettings" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">保存配置</button>
+                    <button @click="saveSettings" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all">保存配置</button>
                 </div>
             </div>
         </div>
@@ -123,7 +142,7 @@
                 <input type="file" ref="labelImageInput" hidden accept="image/*" @change="handleFile($event, 'labelImage')">
 
                 <button @click="startAnalysis" :disabled="!isReadyToAnalyze || loading" class="w-full py-5 rounded-2xl font-bold bg-slate-900 text-white disabled:bg-slate-200 shadow-xl transition-all">
-                    {{ loading ? '专家识别中...' : '开始AI分析方案' }}
+                    开始AI分析方案
                 </button>
             </div>
         </main>
@@ -132,8 +151,8 @@
         <div v-if="showResultModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6 animate-in fade-in">
             <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeResult"></div>
             <div class="relative w-full max-w-2xl bg-white rounded-t-[32px] sm:rounded-[32px] shadow-2xl max-h-[90vh] overflow-y-auto safe-area-bottom text-left">
-                <!-- 详情模式下的封面维护 -->
-                <div v-if="!isNewItem" class="relative aspect-video">
+                <!-- 封面图 -->
+                <div v-if="!isNewItem" class="relative aspect-[16/9] bg-slate-100">
                     <img :src="selectedItem.itemImage" class="w-full h-full object-cover">
                     <div class="absolute inset-0 flex items-end justify-center p-4 img-edit-overlay">
                         <button @click="triggerFile('editImage')" class="bg-white/20 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-medium border border-white/10">更换封面照片</button>
@@ -167,21 +186,21 @@
                         <!-- 洗护建议 -->
                         <div class="grid grid-cols-1 gap-6 text-left">
                             <div class="flex gap-4 text-left">
-                                <div class="w-10 h-10 shrink-0 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 font-bold">洗</div>
+                                <div class="w-10 h-10 shrink-0 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 font-bold text-sm">洗</div>
                                 <div>
                                     <h4 class="text-sm font-bold text-slate-700 mb-1 text-left">洗涤指南</h4>
                                     <p class="text-sm text-slate-500 leading-relaxed text-left">{{ currentAnalysis.laundry_guide }}</p>
                                 </div>
                             </div>
                             <div class="flex gap-4 text-left">
-                                <div class="w-10 h-10 shrink-0 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600 font-bold">晒</div>
+                                <div class="w-10 h-10 shrink-0 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600 font-bold text-sm">晒</div>
                                 <div>
                                     <h4 class="text-sm font-bold text-slate-700 mb-1 text-left">晾晒建议</h4>
                                     <p class="text-sm text-slate-500 leading-relaxed text-left">{{ currentAnalysis.drying_guide }}</p>
                                 </div>
                             </div>
                             <div class="flex gap-4 text-left">
-                                <div class="w-10 h-10 shrink-0 bg-slate-50 rounded-xl flex items-center justify-center text-slate-600 font-bold">烫</div>
+                                <div class="w-10 h-10 shrink-0 bg-slate-50 rounded-xl flex items-center justify-center text-slate-600 font-bold text-sm">烫</div>
                                 <div>
                                     <h4 class="text-sm font-bold text-slate-700 mb-1 text-left">熨烫说明</h4>
                                     <p class="text-sm text-slate-500 leading-relaxed text-left">{{ currentAnalysis.iron_guide }}</p>
@@ -202,7 +221,7 @@
                     </div>
 
                     <div v-if="isNewItem" class="flex gap-4 mt-10">
-                        <button @click="closeResult" class="flex-1 py-4 bg-slate-50 text-slate-500 font-bold rounded-2xl hover:bg-slate-100 transition-colors">丢弃识别结果</button>
+                        <button @click="closeResult" class="flex-1 py-4 bg-slate-50 text-slate-500 font-bold rounded-2xl hover:bg-slate-100 transition-colors">丢弃结果</button>
                         <button @click="saveToWardrobe" class="flex-1 py-4 bg-amber-600 text-white font-bold rounded-2xl hover:bg-amber-700 shadow-lg shadow-amber-900/20">存入我的衣橱</button>
                     </div>
                     <div v-else class="mt-8 text-center">
@@ -227,11 +246,18 @@
         // 安全注册 Service Worker
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                // 仅在 http 或 https 协议下尝试注册，防止 blob 环境报错
                 if (window.location.protocol.startsWith('http')) {
                     navigator.serviceWorker.register('./sw.js')
-                        .then(reg => console.log('SW Registered'))
-                        .catch(err => console.log('SW Registration suppressed due to environment/protocol.'));
+                        .then(reg => {
+                            reg.onupdatefound = () => {
+                                const installingWorker = reg.installing;
+                                installingWorker.onstatechange = () => {
+                                    if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                        console.log('新版本可用，建议刷新');
+                                    }
+                                };
+                            };
+                        });
                 }
             });
         }
@@ -243,11 +269,21 @@
                 const wardrobe = ref([]);
                 const currentView = ref('home');
                 const loading = ref(false);
+                const activeDot = ref(1);
+                const currentLoadingMessage = ref('正在启动 AI 引擎...');
+                const loadingMessages = [
+                    '正在启动 AI 引擎...',
+                    '正在扫描纤维组织结构...',
+                    '正在识别洗护图标符号...',
+                    '正在计算面料耐受度...',
+                    '正在生成长期主义建议...',
+                    '正在优化保存方案...'
+                ];
+                
                 const showResultModal = ref(false);
                 const isNewItem = ref(false);
                 const showSettings = ref(false);
                 
-                // API Key 管理
                 const apiKey = ref(localStorage.getItem('gemini_api_key') || '');
                 const tempApiKey = ref(apiKey.value);
 
@@ -260,8 +296,37 @@
 
                 onMounted(() => {
                     const saved = localStorage.getItem('smart_wardrobe_v2');
-                    if (saved) wardrobe.value = JSON.parse(saved);
+                    if (saved) {
+                        try {
+                            wardrobe.value = JSON.parse(saved);
+                        } catch(e) {
+                            console.error("数据解析失败");
+                            wardrobe.value = [];
+                        }
+                    }
                 });
+
+                // 图片压缩函数：解决手机端 localStorage 5MB 限制
+                const compressImage = (base64, maxWidth = 800, quality = 0.7) => {
+                    return new Promise((resolve) => {
+                        const img = new Image();
+                        img.src = base64;
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            let width = img.width;
+                            let height = img.height;
+                            if (width > maxWidth) {
+                                height = (maxWidth / width) * height;
+                                width = maxWidth;
+                            }
+                            canvas.width = width;
+                            canvas.height = height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, width, height);
+                            resolve(canvas.toDataURL('image/jpeg', quality));
+                        };
+                    });
+                };
 
                 const saveSettings = () => {
                     apiKey.value = tempApiKey.value;
@@ -286,20 +351,31 @@
                     else if (type === 'editImage') editImageInput.value.click();
                 };
 
-                const handleFile = (event, type) => {
+                const handleFile = async (event, type) => {
                     const file = event.target.files[0];
                     if (!file) return;
                     const reader = new FileReader();
-                    reader.onload = (e) => {
-                        if (type === 'itemImage') newItem.value.itemImage = e.target.result;
-                        else if (type === 'labelImage') newItem.value.labelImages.push(e.target.result);
+                    reader.onload = async (e) => {
+                        // 预压缩上传的图片，减少内存占用
+                        const compressed = await compressImage(e.target.result);
+                        if (type === 'itemImage') newItem.value.itemImage = compressed;
+                        else if (type === 'labelImage') newItem.value.labelImages.push(compressed);
                         else if (type === 'editImage' && selectedItem.value) {
-                            selectedItem.value.itemImage = e.target.result;
-                            localStorage.setItem('smart_wardrobe_v2', JSON.stringify(wardrobe.value));
+                            selectedItem.value.itemImage = compressed;
+                            saveToLocalStorage();
                         }
                     };
                     reader.readAsDataURL(file);
                     event.target.value = '';
+                };
+
+                const saveToLocalStorage = () => {
+                    try {
+                        localStorage.setItem('smart_wardrobe_v2', JSON.stringify(wardrobe.value));
+                    } catch (e) {
+                        alert("由于存储空间限制，保存失败。建议清理旧的衣物数据。");
+                        console.error("Storage Quota Exceeded", e);
+                    }
                 };
 
                 const startAnalysis = async () => {
@@ -308,28 +384,41 @@
                         return;
                     }
                     loading.value = true;
+                    
+                    // 启动文案轮播动画
+                    let msgIdx = 0;
+                    const msgInterval = setInterval(() => {
+                        msgIdx = (msgIdx + 1) % loadingMessages.length;
+                        currentLoadingMessage.value = loadingMessages[msgIdx];
+                        activeDot.value = (activeDot.value % 3) + 1;
+                    }, 2000);
+
                     const b64s = newItem.value.labelImages.map(img => img.split(',')[1]);
                     const payload = {
                         contents: [{
                             parts: [
-                                { text: `分析这件名为"${newItem.value.name}"的衣物。输出JSON格式。` },
-                                ...b64s.map(b => ({ inlineData: { mimeType: "image/png", data: b } }))
+                                { text: `分析这件名为"${newItem.value.name}"的衣物图片。提取纤维成分、洗护指南及针对该材质的长期保鲜建议。` },
+                                ...b64s.map(b => ({ inlineData: { mimeType: "image/jpeg", data: b } }))
                             ]
                         }],
-                        systemInstruction: { parts: [{ text: "你是一位面料专家。分析并返回 JSON：{composition: {'成分': '比例'}, composition_summary, laundry_guide, drying_guide, iron_guide, luxury_insight, long_term_tips}。严禁嵌套，确保字段完整。中文回复。" }] },
+                        systemInstruction: { parts: [{ text: "你是一位面料专家。分析并返回 JSON：{composition: {'成分': '比例'}, composition_summary: '核心成分摘要', laundry_guide, drying_guide, iron_guide, luxury_insight, long_term_tips}。严禁嵌套，确保字段完整。中文回复。" }] },
                         generationConfig: { responseMimeType: "application/json" }
                     };
 
                     try {
                         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey.value}`;
                         const res = await fetch(url, { method: 'POST', body: JSON.stringify(payload) });
+                        if (!res.ok) throw new Error("API Request Failed");
                         const data = await res.json();
                         currentAnalysis.value = JSON.parse(data.candidates[0].content.parts[0].text);
                         isNewItem.value = true;
                         showResultModal.value = true;
                     } catch (err) {
                         alert("分析失败，请检查 API Key 或网络状况。");
-                    } finally { loading.value = false; }
+                    } finally { 
+                        clearInterval(msgInterval);
+                        loading.value = false; 
+                    }
                 };
 
                 const saveToWardrobe = () => {
@@ -339,7 +428,7 @@
                         itemImage: newItem.value.itemImage, 
                         analysis: currentAnalysis.value 
                     });
-                    localStorage.setItem('smart_wardrobe_v2', JSON.stringify(wardrobe.value));
+                    saveToLocalStorage();
                     goHome(); 
                     showResultModal.value = false;
                 };
@@ -355,7 +444,7 @@
                     if (!selectedItem.value) return;
                     if (confirm(`确定要移除 "${selectedItem.value.name}" 吗？`)) {
                         wardrobe.value = wardrobe.value.filter(i => i.id !== selectedItem.value.id);
-                        localStorage.setItem('smart_wardrobe_v2', JSON.stringify(wardrobe.value));
+                        saveToLocalStorage();
                         showResultModal.value = false;
                     }
                 };
@@ -365,7 +454,8 @@
                 const isReadyToAnalyze = computed(() => newItem.value.name && newItem.value.itemImage && newItem.value.labelImages.length > 0);
 
                 return {
-                    wardrobe, currentView, newItem, loading, showResultModal, currentAnalysis, isNewItem, isReadyToAnalyze, selectedItem,
+                    wardrobe, currentView, newItem, loading, activeDot, currentLoadingMessage,
+                    showResultModal, currentAnalysis, isNewItem, isReadyToAnalyze, selectedItem,
                     showSettings, tempApiKey, apiKey,
                     itemImageInput, labelImageInput, editImageInput,
                     getIcon, goHome, goAdd, handleFile, triggerFile, startAnalysis, saveToWardrobe, showDetail, closeResult, saveSettings, deleteItem
