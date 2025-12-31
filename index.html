@@ -38,9 +38,26 @@
         </div>
 
         <!-- 页面顶部 -->
-        <header class="sticky top-0 z-30 glass-effect border-b border-slate-100 px-6 py-4 flex justify-between items-center">
-            <h1 class="text-xl font-serif-sc text-slate-900">我的衣橱</h1>
-            <div class="flex items-center gap-3">
+        <header class="sticky top-0 z-30 glass-effect border-b border-slate-100 px-6 py-4 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
+            <div class="flex items-center justify-between w-full sm:w-auto">
+                <h1 class="text-xl font-serif-sc text-slate-900">我的衣橱</h1>
+                
+                <!-- 模型切换器 -->
+                <div class="flex items-center gap-2 bg-slate-100 p-1 rounded-lg ml-4">
+                    <button @click="currentModel = 'gemini-2.5-flash-preview-09-2025'" 
+                            :class="[currentModel === 'gemini-2.5-flash-preview-09-2025' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400']"
+                            class="px-2 py-1 text-[10px] font-bold rounded transition-all">
+                        Flash
+                    </button>
+                    <button @click="currentModel = 'gemini-2.5-flash-lite'" 
+                            :class="[currentModel === 'gemini-2.5-flash-lite' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400']"
+                            class="px-2 py-1 text-[10px] font-bold rounded transition-all">
+                        Lite
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3">
                 <div @click="showSettings = true" class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-50 border border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors">
                     <div class="w-2 h-2 rounded-full" :class="[isFeishuConfigured ? 'bg-blue-500' : 'bg-gray-300']"></div>
                     <span class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
@@ -229,7 +246,7 @@
                                 <span v-html="getIcon('sparkles', 'w-24 h-24')"></span>
                             </div>
                             <label class="text-[10px] font-bold text-amber-400/60 uppercase block mb-2 tracking-widest">面料洞察</label>
-                            <p class="text-sm text-amber-100 leading-relaxed italic relative z-10 font-medium tracking-wide">{{ currentAnalysis.fabric_insight }}</p>
+                            <p class="text-sm text-amber-100 leading-relaxed italic relative z-10 font-medium tracking-wide">{{ currentAnalysis.luxury_insight || currentAnalysis.fabric_insight }}</p>
                         </div>
                     </div>
                     
@@ -296,6 +313,7 @@
                 const isReplacing = ref(false);
                 const showSettings = ref(false);
                 const isDetailZoomed = ref(false);
+                const currentModel = ref('gemini-2.5-flash-preview-09-2025');
                 
                 // 配置状态
                 const apiKey = ref(localStorage.getItem('gemini_api_key') || '');
@@ -514,8 +532,11 @@
                 const syncFromFeishu = async () => {
                     if (!isFeishuConfigured.value) return;
                     loading.value = true;
-                    currentLoadingMessage.value = "正在从飞书同步数据...";
-                    currentLoadingSubMessage.value = "SYNCING FEISHU";
+                    // Reset to generic sync message if not specific
+                    if (currentLoadingMessage.value === analyzeMessages[0].title) {
+                        currentLoadingMessage.value = "正在从飞书同步数据...";
+                        currentLoadingSubMessage.value = "SYNCING FEISHU";
+                    }
                     
                     try {
                         const data = await callVercelProxy('list_records');
@@ -625,7 +646,9 @@
                 const startAnalysis = async () => {
                     if (!apiKey.value) { showSettings.value = true; return; }
                     loading.value = true;
-                    currentLoadingSubMessage.value = "Gemini Processing";
+                    // Reset to first analysis message specifically
+                    currentLoadingMessage.value = analyzeMessages[0].title;
+                    currentLoadingSubMessage.value = analyzeMessages[0].sub;
                     startLoadingRotation();
                     
                     const b64s = newItem.value.labelImages.map(img => img.split(',')[1]);
@@ -655,7 +678,7 @@ JSON 结构：
                     };
 
                     try {
-                        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey.value}`;
+                        const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel.value}:generateContent?key=${apiKey.value}`;
                         const res = await fetch(url, { method: 'POST', body: JSON.stringify(payload) });
                         const data = await res.json();
                         currentAnalysis.value = JSON.parse(data.candidates[0].content.parts[0].text);
@@ -790,7 +813,7 @@ JSON 结构：
                 const isReadyToAnalyze = computed(() => newItem.value.name && newItem.value.itemImage && newItem.value.labelImages.length > 0);
 
                 return {
-                    wardrobe, currentView, viewMode, newItem, loading, isSaving, isDeleting, isReplacing, showResultModal, currentAnalysis, isNewItem, isReadyToAnalyze, selectedItem, isDetailZoomed,
+                    wardrobe, currentView, viewMode, newItem, loading, isSaving, isDeleting, isReplacing, showResultModal, currentAnalysis, isNewItem, isReadyToAnalyze, selectedItem, isDetailZoomed, currentModel,
                     showSettings, tempApiKey, apiKey, tempCloudName, tempUploadPreset, isFeishuConfigured, isCloudConfigured,
                     tempClApiKey, tempClApiSecret, clApiKey, clApiSecret,
                     tempFsAppToken, tempFsTableId, tempVercelUrl,
