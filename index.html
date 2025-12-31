@@ -4,11 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#FDFCF9">
-    <title>我的智能衣橱 - 极致优化版</title>
+    <title>我的智能衣橱 - 飞书同步版</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- 引入用于计算 Cloudinary 签名所需的 SHA-1 库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha1/0.6.0/sha1.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     
@@ -22,8 +21,6 @@
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .loader-ring { border: 2px solid #f3f3f3; border-top: 2px solid #0f172a; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        /* 细节查看全屏动画 */
         .zoom-fade-enter-active, .zoom-fade-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
         .zoom-fade-enter-from, .zoom-fade-leave-to { opacity: 0; transform: scale(0.95); }
     </style>
@@ -45,9 +42,9 @@
             <h1 class="text-xl font-serif-sc text-slate-900">我的衣橱</h1>
             <div class="flex items-center gap-3">
                 <div @click="showSettings = true" class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-50 border border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors">
-                    <div class="w-2 h-2 rounded-full" :class="[isCloudConfigured ? 'bg-green-500' : 'bg-amber-400']"></div>
+                    <div class="w-2 h-2 rounded-full" :class="[isFeishuConfigured ? 'bg-indigo-500' : 'bg-gray-300']"></div>
                     <span class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                        {{ isCloudConfigured ? 'Cloudinary Ready' : 'Cloud Not Set' }}
+                        {{ isFeishuConfigured ? 'Vercel Sync' : 'Local Only' }}
                     </span>
                 </div>
                 <button @click="showSettings = true" class="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400">
@@ -60,36 +57,70 @@
         <div v-if="showSettings" class="fixed inset-0 z-50 flex items-center justify-center p-6">
             <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showSettings = false"></div>
             <div class="relative w-full max-w-sm bg-white rounded-[24px] p-6 shadow-2xl overflow-y-auto max-h-[85vh]">
-                <h3 class="font-bold text-slate-900 mb-4 text-left">设置中心</h3>
+                <h3 class="font-bold text-slate-900 mb-4 text-left">系统配置</h3>
                 <div class="space-y-6">
                     <div class="space-y-1 text-left">
                         <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Gemini API Key</label>
                         <input v-model="tempApiKey" type="password" placeholder="粘贴您的 API Key" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm outline-none focus:border-slate-300 transition-colors">
                     </div>
+                    
                     <div class="border-t border-slate-100 pt-4 text-left">
-                        <h4 class="text-xs font-bold text-slate-900 mb-3">Cloudinary 配置</h4>
+                        <h4 class="text-xs font-bold text-slate-900 mb-3">Cloudinary 图片存储</h4>
                         <div class="space-y-3">
-                            <input v-model="tempCloudName" type="text" placeholder="你的 Cloud Name" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm outline-none">
-                            <input v-model="tempUploadPreset" type="text" placeholder="未签名的 Upload Preset" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm outline-none">
+                            <input v-model="tempCloudName" type="text" placeholder="Cloud Name" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm outline-none">
+                            <input v-model="tempUploadPreset" type="text" placeholder="Upload Preset" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm outline-none">
                             <div class="p-3 bg-blue-50 rounded-xl mt-2">
-                                <p class="text-[10px] text-blue-600 font-bold mb-2 uppercase tracking-tight">启用云端同步功能</p>
+                                <p class="text-[10px] text-blue-600 font-bold mb-2 uppercase tracking-tight">高级功能 (删除图片)</p>
                                 <input v-model="tempClApiKey" type="text" placeholder="API Key" class="w-full bg-white border border-blue-100 rounded-lg px-3 py-2 text-[10px] mb-2 outline-none">
                                 <input v-model="tempClApiSecret" type="password" placeholder="API Secret" class="w-full bg-white border border-blue-100 rounded-lg px-3 py-2 text-[10px] outline-none">
                             </div>
                         </div>
                     </div>
-                    <button @click="saveSettings" class="w-full py-4 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all">保存设置</button>
+
+                    <!-- 飞书 / Vercel 配置区域 -->
+                    <div class="border-t border-slate-100 pt-4 text-left">
+                        <h4 class="text-xs font-bold text-slate-900 mb-3 flex items-center gap-2">
+                            <span v-html="getIcon('server', 'w-3 h-3')"></span> 飞书多维表格同步 (Vercel 代理)
+                        </h4>
+                        <div class="space-y-3">
+                            <div class="space-y-1">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vercel Proxy URL</label>
+                                <input v-model="tempVercelUrl" type="text" placeholder="https://your-app.vercel.app/api/feishu" class="w-full bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm outline-none text-indigo-900 font-medium">
+                            </div>
+                            <input v-model="tempFsAppToken" type="text" placeholder="Base Token (URL中 app...)" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm outline-none">
+                            <input v-model="tempFsTableId" type="text" placeholder="Table ID (tbl...)" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm outline-none">
+                            
+                            <div class="p-3 bg-green-50 rounded-xl text-[10px] text-green-700 leading-relaxed mt-2">
+                                <div class="flex items-center gap-1 mb-1 font-bold">
+                                    <span v-html="getIcon('shield-check', 'w-3 h-3')"></span> 安全同步模式
+                                </div>
+                                无需在前端填写 App ID 和 Secret。<br/>
+                                请确保 Vercel 环境变量已配置 FEISHU_APP_ID 和 FEISHU_APP_SECRET。
+                            </div>
+                        </div>
+                    </div>
+
+                    <button @click="saveSettings" class="w-full py-4 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all">保存并应用</button>
                 </div>
             </div>
         </div>
 
         <!-- 首页视图 -->
         <main v-if="currentView === 'home'" class="flex-1 p-6 pb-32 animate-in fade-in">
-            <div v-if="!isCloudConfigured" class="mb-8 p-6 bg-amber-50 rounded-[24px] border border-amber-100 flex flex-col items-center text-center">
-                <div class="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4 text-amber-500"><span v-html="getIcon('cloud-off', 'w-6 h-6')"></span></div>
-                <h3 class="text-sm font-bold text-amber-900 mb-1 text-left">存储未连接</h3>
-                <p class="text-[11px] text-amber-600/70 mb-4 leading-relaxed">配置云端以开启永久数字衣橱</p>
-                <button @click="showSettings = true" class="px-6 py-2.5 bg-amber-500 text-white text-[11px] font-bold rounded-full shadow-md active:scale-95 transition-all">去配置</button>
+            <!-- 未配置提示 -->
+            <div v-if="!isFeishuConfigured" class="mb-8 p-6 bg-slate-50 rounded-[24px] border border-slate-100 flex flex-col items-center text-center">
+                <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-4 text-slate-400 shadow-sm"><span v-html="getIcon('cloud-off', 'w-6 h-6')"></span></div>
+                <h3 class="text-sm font-bold text-slate-900 mb-1 text-left">未连接云端数据库</h3>
+                <p class="text-[11px] text-slate-500 mb-4 leading-relaxed">配置 Vercel 代理以安全同步数据至飞书。</p>
+                <button @click="showSettings = true" class="px-6 py-2.5 bg-slate-900 text-white text-[11px] font-bold rounded-full shadow-md active:scale-95 transition-all">开始配置</button>
+            </div>
+
+            <!-- 视图切换器 -->
+            <div class="flex justify-end mb-6">
+                <div class="flex bg-slate-100 p-1 rounded-xl">
+                    <button @click="changeViewMode('card')" :class="[viewMode === 'card' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400']" class="p-2 rounded-lg transition-all"><span v-html="getIcon('layout-grid', 'w-4 h-4')"></span></button>
+                    <button @click="changeViewMode('list')" :class="[viewMode === 'list' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400']" class="p-2 rounded-lg transition-all"><span v-html="getIcon('list', 'w-4 h-4')"></span></button>
+                </div>
             </div>
 
             <div v-if="wardrobe.length === 0" class="flex flex-col items-center justify-center py-24 text-slate-300">
@@ -97,15 +128,16 @@
                 <p class="text-slate-500 font-medium">您的衣橱是空的</p>
             </div>
             
-            <div v-else class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div v-else :class="[viewMode === 'card' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4' : 'flex flex-col gap-3']">
                 <div v-for="item in wardrobe" :key="item.id" @click="showDetail(item)"
-                     class="group bg-white rounded-2xl overflow-hidden card-shadow border border-slate-50 cursor-pointer active:scale-95 transition-all flex flex-col">
-                    <div class="aspect-[3/4] bg-slate-100 relative overflow-hidden shrink-0">
-                        <img :src="item.itemImage" class="w-full h-full object-cover">
+                     :class="[viewMode === 'card' ? 'flex-col' : 'flex-row items-center p-2 gap-4']"
+                     class="group bg-white rounded-2xl overflow-hidden card-shadow border border-slate-50 cursor-pointer active:scale-95 transition-all flex">
+                    <div :class="[viewMode === 'card' ? 'aspect-[3/4] w-full' : 'w-16 h-16 rounded-xl shrink-0']" class="bg-slate-100 relative overflow-hidden">
+                        <img :src="viewMode === 'list' ? getThumbnail(item.itemImage) : item.itemImage" class="w-full h-full object-cover">
                     </div>
-                    <div class="p-3 text-left">
+                    <div class="p-3 text-left flex-1">
                         <h3 class="font-medium text-slate-800 truncate text-sm">{{ item.name }}</h3>
-                        <p class="text-[10px] text-slate-400 mt-1 uppercase">{{ item.analysis?.composition_summary || '已存入' }}</p>
+                        <p class="text-[10px] text-slate-400 mt-1 uppercase truncate">{{ item.analysis?.composition_summary || '已存入' }}</p>
                     </div>
                 </div>
             </div>
@@ -151,8 +183,7 @@
         <div v-if="showResultModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6">
             <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeResult"></div>
             <div class="relative w-full max-w-2xl bg-white rounded-t-[32px] sm:rounded-[32px] shadow-2xl max-h-[90vh] overflow-y-auto">
-                <!-- 直接点击封面即可放大图片 -->
-                <div v-if="!isNewItem" class="relative aspect-[16/9] cursor-pointer" @click="isDetailZoomed = true">
+                <div v-if="!isNewItem" class="relative aspect-[16/9] cursor-pointer group" @click="isDetailZoomed = true">
                     <img :src="selectedItem.itemImage" class="w-full h-full object-cover">
                     <div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
                     <div class="absolute bottom-6 left-8 text-white">
@@ -248,12 +279,13 @@
     </div>
 
     <script>
-        const { createApp, ref, computed, onMounted, nextTick } = Vue;
+        const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
 
         createApp({
             setup() {
                 const wardrobe = ref([]);
                 const currentView = ref('home');
+                const viewMode = ref(localStorage.getItem('wardrobe_view_mode') || 'card');
                 const loading = ref(false);
                 const isSaving = ref(false);
                 const isDeleting = ref(false);
@@ -268,11 +300,20 @@
                 const clApiKey = ref(localStorage.getItem('cl_api_key') || '');
                 const clApiSecret = ref(localStorage.getItem('cl_api_secret') || '');
                 
+                // 飞书配置
+                const fsAppToken = ref(localStorage.getItem('fs_app_token') || '');
+                const fsTableId = ref(localStorage.getItem('fs_table_id') || '');
+                const vercelUrl = ref(localStorage.getItem('vercel_proxy_url') || '');
+
                 const tempApiKey = ref(apiKey.value);
                 const tempCloudName = ref(cloudName.value);
                 const tempUploadPreset = ref(uploadPreset.value);
                 const tempClApiKey = ref(clApiKey.value);
                 const tempClApiSecret = ref(clApiSecret.value);
+                
+                const tempFsAppToken = ref(fsAppToken.value);
+                const tempFsTableId = ref(fsTableId.value);
+                const tempVercelUrl = ref(vercelUrl.value);
 
                 // 智能分析文案切换系统
                 const analyzeMessages = [
@@ -295,6 +336,7 @@
                 const labelImageInput = ref(null);
                 const replaceCoverInput = ref(null);
 
+                const isFeishuConfigured = computed(() => !!(fsAppToken.value && fsTableId.value && vercelUrl.value));
                 const isCloudConfigured = computed(() => !!(cloudName.value && uploadPreset.value));
 
                 const startLoadingRotation = () => {
@@ -310,7 +352,6 @@
                     clearInterval(messageTimer);
                 };
 
-                // 高级成分解析逻辑
                 const parsedComposition = computed(() => {
                     if (!currentAnalysis.value || !currentAnalysis.value.composition) return {};
                     const raw = currentAnalysis.value.composition;
@@ -336,7 +377,10 @@
                 });
 
                 onMounted(() => {
-                    loadWardrobe();
+                    loadWardrobe(); // 优先从本地加载，再尝试云端同步
+                    if (isFeishuConfigured.value) {
+                        syncFromFeishu();
+                    }
                     nextTick(() => lucide.createIcons());
                 });
 
@@ -355,12 +399,120 @@
                     localStorage.setItem('cl_upload_preset', tempUploadPreset.value);
                     localStorage.setItem('cl_api_key', tempClApiKey.value);
                     localStorage.setItem('cl_api_secret', tempClApiSecret.value);
+                    
+                    localStorage.setItem('fs_app_token', tempFsAppToken.value);
+                    localStorage.setItem('fs_table_id', tempFsTableId.value);
+                    localStorage.setItem('vercel_proxy_url', tempVercelUrl.value);
+
                     apiKey.value = tempApiKey.value;
                     cloudName.value = tempCloudName.value;
                     uploadPreset.value = tempUploadPreset.value;
                     clApiKey.value = tempClApiKey.value;
                     clApiSecret.value = tempClApiSecret.value;
+                    
+                    fsAppToken.value = tempFsAppToken.value;
+                    fsTableId.value = tempFsTableId.value;
+                    vercelUrl.value = tempVercelUrl.value;
+
                     showSettings.value = false;
+                    
+                    if (isFeishuConfigured.value) {
+                        alert("配置已保存，正在尝试从飞书同步数据...");
+                        syncFromFeishu();
+                    }
+                };
+
+                // 通用 Vercel 代理调用函数
+                const callVercelProxy = async (action, payload = {}) => {
+                    if (!vercelUrl.value) throw new Error("Missing Vercel Proxy URL");
+                    
+                    // 构造完整的请求体
+                    const body = {
+                        app_token: fsAppToken.value,
+                        table_id: fsTableId.value,
+                        ...payload
+                    };
+
+                    // 使用 POST 请求发送所有操作（Vercel Function 常规做法）
+                    // 并在 Query Params 中带上 action 以便路由
+                    // 注意：URL 必须是正确的 Vercel Function 地址
+                    const targetUrl = new URL(vercelUrl.value);
+                    targetUrl.searchParams.set('action', action);
+
+                    const res = await fetch(targetUrl.toString(), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+
+                    if (!res.ok) throw new Error(`Proxy Error: ${res.statusText}`);
+                    const data = await res.json();
+                    if (data.code !== 0) throw new Error(data.msg || 'Feishu API Error');
+                    return data;
+                };
+
+                const syncFromFeishu = async () => {
+                    if (!isFeishuConfigured.value) return;
+                    loading.value = true;
+                    currentLoadingMessage.value = "正在从飞书同步数据...";
+                    currentLoadingSubMessage.value = "SYNCING FEISHU";
+                    
+                    try {
+                        // 调用 Vercel 代理获取列表
+                        // 注意：这里使用 'list_records' 动作
+                        const data = await callVercelProxy('list_records');
+                        
+                        if (data.data && data.data.items) {
+                            const feishuItems = data.data.items.map(record => ({
+                                record_id: record.record_id, 
+                                id: record.fields.uuid || record.record_id,
+                                name: record.fields.name,
+                                itemImage: record.fields.image_url, 
+                                publicId: record.fields.public_id,
+                                analysis: record.fields.analysis ? JSON.parse(record.fields.analysis) : null,
+                                createdAt: record.fields.created_at || Date.now()
+                            }));
+                            wardrobe.value = feishuItems.sort((a, b) => b.createdAt - a.createdAt);
+                            localStorage.setItem('my_smart_wardrobe_data', JSON.stringify(wardrobe.value));
+                        }
+                    } catch (e) {
+                        console.error("同步失败: ", e);
+                        // 不阻断用户使用，仅记录日志
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const addToFeishu = async (item) => {
+                    if (!isFeishuConfigured.value) return;
+                    try {
+                        await callVercelProxy('add_record', {
+                            fields: {
+                                name: item.name,
+                                image_url: item.itemImage,
+                                public_id: item.publicId,
+                                analysis: JSON.stringify(item.analysis),
+                                created_at: item.createdAt,
+                                uuid: item.id
+                            }
+                        });
+                        // 重新同步以获取 record_id
+                        syncFromFeishu();
+                    } catch (e) { console.error("Add to Feishu failed", e); }
+                };
+
+                const deleteFromFeishu = async (record_id) => {
+                    if (!isFeishuConfigured.value || !record_id) return;
+                    try {
+                        await callVercelProxy('delete_record', { record_id });
+                    } catch (e) { console.error("Delete from Feishu failed", e); }
+                };
+
+                const updateFeishuRecord = async (record_id, fields) => {
+                    if (!isFeishuConfigured.value || !record_id) return;
+                    try {
+                        await callVercelProxy('update_record', { record_id, fields });
+                    } catch (e) { console.error("Update Feishu failed", e); }
                 };
 
                 const getIcon = (name, className) => {
@@ -368,6 +520,17 @@
                         return window.lucide.icons[name].toSvg({ class: className || 'w-5 h-5' });
                     }
                     return '';
+                };
+
+                const getThumbnail = (url) => {
+                    if (!url || !url.includes('cloudinary.com')) return url;
+                    return url.replace('/upload/', '/upload/w_200,h_200,c_fill,q_auto/');
+                };
+
+                const changeViewMode = (mode) => {
+                    viewMode.value = mode;
+                    localStorage.setItem('wardrobe_view_mode', mode);
+                    nextTick(() => lucide.createIcons());
                 };
 
                 const goHome = () => { currentView.value = 'home'; resetNewItem(); nextTick(() => lucide.createIcons()); };
@@ -470,8 +633,14 @@
                             analysis: currentAnalysis.value,
                             createdAt: Date.now()
                         };
+                        
+                        // 先保存到本地
                         wardrobe.value.unshift(itemToAdd);
                         localStorage.setItem('my_smart_wardrobe_data', JSON.stringify(wardrobe.value));
+                        
+                        // 尝试同步到飞书 (通过 Proxy)
+                        await addToFeishu(itemToAdd);
+
                         showResultModal.value = false;
                         goHome();
                     } catch (e) { alert("同步失败"); } finally { isSaving.value = false; loading.value = false; }
@@ -495,6 +664,15 @@
                             selectedItem.value.itemImage = uploadRes.url;
                             selectedItem.value.publicId = uploadRes.publicId;
                             localStorage.setItem('my_smart_wardrobe_data', JSON.stringify(wardrobe.value));
+                            
+                            // 更新飞书 (通过 Proxy)
+                            if (selectedItem.value.record_id) {
+                                await updateFeishuRecord(selectedItem.value.record_id, {
+                                    image_url: uploadRes.url,
+                                    public_id: uploadRes.publicId
+                                });
+                            }
+
                             // 清理旧图
                             if (oldPublicId) await deleteFromCloudinary(oldPublicId);
                         }
@@ -521,6 +699,12 @@
                     if (item.publicId && clApiSecret.value) {
                         await deleteFromCloudinary(item.publicId);
                     }
+                    
+                    // 飞书删除 (通过 Proxy)
+                    if (item.record_id) {
+                        await deleteFromFeishu(item.record_id);
+                    }
+
                     wardrobe.value = wardrobe.value.filter(i => i.id !== item.id);
                     localStorage.setItem('my_smart_wardrobe_data', JSON.stringify(wardrobe.value));
                     isDeleting.value = false;
@@ -531,12 +715,13 @@
                 const isReadyToAnalyze = computed(() => newItem.value.name && newItem.value.itemImage && newItem.value.labelImages.length > 0);
 
                 return {
-                    wardrobe, currentView, newItem, loading, isSaving, isDeleting, isReplacing, showResultModal, currentAnalysis, isNewItem, isReadyToAnalyze, selectedItem, isDetailZoomed,
-                    showSettings, tempApiKey, apiKey, tempCloudName, tempUploadPreset, isCloudConfigured,
+                    wardrobe, currentView, viewMode, newItem, loading, isSaving, isDeleting, isReplacing, showResultModal, currentAnalysis, isNewItem, isReadyToAnalyze, selectedItem, isDetailZoomed,
+                    showSettings, tempApiKey, apiKey, tempCloudName, tempUploadPreset, isFeishuConfigured, isCloudConfigured,
                     tempClApiKey, tempClApiSecret, clApiKey, clApiSecret,
+                    tempFsAppToken, tempFsTableId, tempVercelUrl,
                     itemImageInput, labelImageInput, replaceCoverInput, currentLoadingMessage, currentLoadingSubMessage, parsedComposition,
                     getIcon, goHome, goAdd, handleFile, triggerFile, startAnalysis, saveToWardrobe, showDetail, closeResult, saveSettings, deleteItem,
-                    triggerReplaceCover, handleReplaceCover
+                    triggerReplaceCover, handleReplaceCover, getThumbnail, changeViewMode
                 };
             }
         }).mount('#app');
