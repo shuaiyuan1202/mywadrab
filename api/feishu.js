@@ -94,6 +94,8 @@ export default async function handler(req, res) {
             return res.json({ code: 401, msg: '密码错误' });
         }
         
+        console.log(userFields)
+        console.log(userFields.status)
         if (!userFields.status) {
             return res.json({ code: 403, msg: '账号未启用或已被禁用' });
         }
