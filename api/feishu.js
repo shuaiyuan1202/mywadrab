@@ -95,8 +95,7 @@ export default async function handler(req, res) {
         }
         
         console.log(userFields)
-        console.log(userFields.status)
-        if (!userFields.status) {
+        if (!userFields.enabled) {
             return res.json({ code: 403, msg: '账号未启用或已被禁用' });
         }
 
