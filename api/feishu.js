@@ -94,8 +94,8 @@ export default async function handler(req, res) {
             return res.json({ code: 401, msg: '密码错误' });
         }
         
-        if (userFields.status !== 'enabled') {
-            return res.json({ code: 403, msg: '账号已被禁用' });
+        if (!userFields.status) {
+            return res.json({ code: 403, msg: '账号未启用或已被禁用' });
         }
 
         // 3. 登录成功，返回配置信息和 UserID
