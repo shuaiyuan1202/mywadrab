@@ -5,7 +5,7 @@ let cachedToken = null;
 let tokenExpire = 0;
 
 export default async function handler(req, res) {
-  // 1. 设置 CORS 头，允许跨域访问
+  // CORS 设置
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*'); 
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -14,135 +14,152 @@ export default async function handler(req, res) {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
 
-  // 处理预检请求
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
-  console.log(`[Request] Action: ${req.query.action}, Method: ${req.method}`);
+  console.log(`[Request] Action: ${req.query.action}`);
 
   try {
+    // ----------------------------------------------------
+    // 1. 环境检查与 Token 获取
+    // ----------------------------------------------------
     const { action } = req.query; 
     const body = req.body || {};
+    
+    // 必须配置 Vercel 环境变量
+    const appId = process.env.FEISHU_APP_ID;
+    const appSecret = process.env.FEISHU_APP_SECRET;
 
-    // 优先从环境变量获取密钥
-    const appId = process.env.FEISHU_APP_ID || body.app_id;
-    const appSecret = process.env.FEISHU_APP_SECRET || body.app_secret;
-
-    // 检查环境变量是否配置
     if (!appId || !appSecret) {
-        console.error('[Error] Missing FEISHU_APP_ID or FEISHU_APP_SECRET');
-        return res.status(500).json({ 
-            code: -1, 
-            msg: 'Server Configuration Error: Missing Feishu App Credentials in Vercel Environment Variables.' 
-        });
+        return res.status(500).json({ code: -1, msg: 'Server Env Error: Missing FEISHU_APP_ID/SECRET' });
     }
 
-    // 2. 内部工具：获取 Tenant Access Token (带简单缓存)
     const getAccessToken = async () => {
-      // 检查缓存是否有效
-      if (cachedToken && Date.now() < tokenExpire) {
-        // console.log('[Token] Using cached token');
-        return cachedToken;
-      }
+      if (cachedToken && Date.now() < tokenExpire) return cachedToken;
       
-      console.log('[Token] Fetching new tenant access token...');
       const response = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ app_id: appId, app_secret: appSecret })
       });
-      
       const data = await response.json();
       if (data.code === 0) {
         cachedToken = data.tenant_access_token;
-        tokenExpire = Date.now() + (data.expire * 1000) - 60000; // 提前1分钟过期
-        console.log('[Token] Successfully obtained new token');
+        tokenExpire = Date.now() + (data.expire * 1000) - 60000;
         return cachedToken;
       }
-      
-      console.error('[Token Error]', data);
-      throw new Error(`Feishu Token Error: ${data.msg}`);
+      throw new Error(`Token Error: ${data.msg}`);
     };
 
-    // 获取 Token
     const token = await getAccessToken();
-    
-    // 基础参数提取
-    const { app_token, table_id, record_id, fields } = body;
-    
-    // 参数校验
-    if (!app_token || !table_id) {
-        // get_token 动作除外
-        if (action !== 'get_token') {
-             throw new Error('Missing app_token or table_id in request body');
-        }
-    }
 
+    // ----------------------------------------------------
+    // 2. 业务逻辑分发
+    // ----------------------------------------------------
+    
+    // 通用参数
+    // 注意：登录时操作的是“账号表”，普通操作是“衣服表”，ID 由前端传入
+    const { app_token, table_id, record_id, fields, filter } = body; 
     const baseUrl = `https://open.feishu.cn/open-apis/bitable/v1/apps/${app_token}/tables/${table_id}/records`;
 
-    let fetchUrl = baseUrl;
-    let method = 'GET';
-    let fetchBody = null;
-
-    // 3. 根据 action 分发请求
     switch (action) {
-      case 'get_token':
-        return res.status(200).json({ code: 0, tenant_access_token: token, expire: 7200 });
+      // --- 新增：用户登录逻辑 ---
+      case 'login': {
+        const { username, password } = body;
+        if (!username || !password) return res.status(400).json({ code: -1, msg: 'Missing credentials' });
 
-      case 'list_records':
-        method = 'GET';
-        fetchUrl = `${baseUrl}?page_size=500`; 
-        break;
+        // 1. 在账号表中搜索用户名
+        // 飞书筛选语法：CurrentValue.[字段名] = "值"
+        const filterStr = `CurrentValue.[name]="${username}"`;
+        // 只需获取相关字段
+        const searchUrl = `${baseUrl}?filter=${encodeURIComponent(filterStr)}`;
+        
+        const searchRes = await fetch(searchUrl, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const searchData = await searchRes.json();
 
-      case 'add_record':
-        method = 'POST';
-        fetchBody = JSON.stringify({ fields });
-        break;
+        if (searchData.code !== 0 || !searchData.data.items || searchData.data.items.length === 0) {
+            return res.json({ code: 404, msg: '用户不存在' });
+        }
 
-      case 'update_record':
-        if (!record_id) throw new Error('Missing record_id for update');
-        method = 'PUT';
-        fetchUrl = `${baseUrl}/${record_id}`;
-        fetchBody = JSON.stringify({ fields });
-        break;
+        const userRecord = searchData.data.items[0];
+        const userFields = userRecord.fields;
 
-      case 'delete_record':
-        if (!record_id) throw new Error('Missing record_id for delete');
-        method = 'DELETE';
-        fetchUrl = `${baseUrl}/${record_id}`;
-        break;
+        // 2. 验证密码和状态
+        // 注意：生产环境密码应哈希比对，这里演示为明文比对
+        if (String(userFields.password) !== String(password)) {
+            return res.json({ code: 401, msg: '密码错误' });
+        }
+        
+        if (userFields.status !== 'enabled') {
+            return res.json({ code: 403, msg: '账号已被禁用' });
+        }
+
+        // 3. 登录成功，返回配置信息和 UserID
+        // configuration 字段在飞书中是文本类型，存储 JSON 字符串
+        let configData = {};
+        try {
+            configData = JSON.parse(userFields.configuration || '{}');
+        } catch (e) {
+            console.error('Config parse error', e);
+        }
+
+        return res.json({
+            code: 0,
+            data: {
+                user_id: userRecord.record_id, // 使用飞书行 ID 作为用户 ID
+                name: userFields.name,
+                config: configData // 下发配置
+            }
+        });
+      }
+
+      // --- 通用 CRUD (带权限过滤) ---
+      case 'list_records': {
+        // 支持 filter 参数，用于 user_id 过滤
+        let url = `${baseUrl}?page_size=500`;
+        if (filter) {
+            url += `&filter=${encodeURIComponent(filter)}`;
+        }
+        const listRes = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+        return res.json(await listRes.json());
+      }
+
+      case 'add_record': {
+        const addRes = await fetch(baseUrl, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields })
+        });
+        return res.json(await addRes.json());
+      }
+
+      case 'update_record': {
+        const updateRes = await fetch(`${baseUrl}/${record_id}`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields })
+        });
+        return res.json(await updateRes.json());
+      }
+
+      case 'delete_record': {
+        const delRes = await fetch(`${baseUrl}/${record_id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return res.json(await delRes.json());
+      }
 
       default:
         return res.status(400).json({ code: -1, msg: `Unknown action: ${action}` });
     }
 
-    console.log(`[Feishu API] ${method} ${fetchUrl}`);
-
-    // 4. 发起飞书请求
-    const feishuRes = await fetch(fetchUrl, {
-      method,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: fetchBody
-    });
-
-    const feishuData = await feishuRes.json();
-    
-    if (feishuData.code !== 0) {
-        console.error('[Feishu API Error Response]', feishuData);
-    } else {
-        console.log('[Feishu API Success]');
-    }
-    
-    // 5. 返回结果给前端
-    res.status(200).json(feishuData);
-
   } catch (error) {
-    console.error('[Proxy Handler Error]', error);
-    res.status(500).json({ code: -1, msg: error.message, stack: error.stack });
+    console.error('[Proxy Error]', error);
+    res.status(500).json({ code: -1, msg: error.message });
   }
 }
