@@ -31,7 +31,7 @@
     <div id="app" v-cloak class="min-h-screen flex flex-col relative overflow-x-hidden text-slate-900">
         
         <!-- 全局加载/锁定遮罩 -->
-        <div v-if="loading || isDeleting || isReplacing" class="fixed inset-0 z-[120] bg-white/95 backdrop-blur-md flex flex-col items-center justify-center p-10">
+        <div v-if="loading || isDeleting || isReplacing || isSaving" class="fixed inset-0 z-[120] bg-white/95 backdrop-blur-md flex flex-col items-center justify-center p-10">
             <div class="loader-ring mb-6"></div>
             <div class="text-center space-y-3">
                 <p class="text-slate-900 font-serif-sc text-lg loading-pulse">{{ currentLoadingMessage }}</p>
@@ -108,19 +108,31 @@
                         <div class="w-2 h-2 rounded-full bg-green-500"></div>
                         <span class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter truncate max-w-[60px]">{{ currentUser?.name }}</span>
                     </div>
-                    <button @click="handleLogout" class="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-colors">
-                        <span v-html="getIcon('log-out', 'w-5 h-5')"></span>
+                    
+                    <!-- 优化后的退出登录按钮 -->
+                    <button @click="handleLogout" class="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-full transition-all group">
+                        <span class="text-[10px] font-bold group-hover:underline">退出</span>
+                        <span v-html="getIcon('log-out', 'w-3.5 h-3.5')"></span>
                     </button>
                 </div>
             </header>
 
             <!-- 首页列表 -->
             <main v-if="currentView === 'home'" class="flex-1 p-6 pb-32 animate-in fade-in">
-                <div v-if="wardrobe.length === 0" class="flex flex-col items-center justify-center py-24 text-slate-300">
+                <!-- 初始 Loading 状态 -->
+                <div v-if="initialLoading" class="flex flex-col items-center justify-center py-32 space-y-4 animate-pulse">
+                    <div class="w-16 h-16 bg-slate-100 rounded-full"></div>
+                    <div class="w-32 h-4 bg-slate-100 rounded-full"></div>
+                    <p class="text-xs text-slate-300">正在同步衣橱数据...</p>
+                </div>
+
+                <!-- 空状态 (仅当非 Loading 且无数据时显示) -->
+                <div v-else-if="wardrobe.length === 0" class="flex flex-col items-center justify-center py-24 text-slate-300">
                     <div class="p-6 bg-white rounded-full shadow-inner mb-6"><span v-html="getIcon('shirt', 'w-12 h-12 opacity-20')"></span></div>
                     <p class="text-slate-500 font-medium">您的衣橱是空的</p>
                 </div>
                 
+                <!-- 列表内容 -->
                 <div v-else :class="[viewMode === 'card' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4' : 'flex flex-col gap-3']">
                     <div v-for="item in wardrobe" :key="item.id" @click="showDetail(item)"
                          :class="[viewMode === 'card' ? 'flex-col' : 'flex-row items-center p-2 gap-4']"
@@ -143,7 +155,7 @@
                         <span v-html="getIcon('chevron-left', 'w-5 h-5')"></span>
                         <span class="text-sm font-medium">返回衣橱</span>
                     </div>
-                    <h2 class="text-2xl font-serif-sc">识别并存储</h2>
+                    <h2 class="text-2xl font-serif-sc">添加新衣服分析</h2>
                     <div class="space-y-4">
                         <input v-model="newItem.name" type="text" placeholder="衣服名称（如：米色羊毛西装）" class="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 outline-none focus:border-slate-300 transition-colors shadow-sm">
                         <div class="space-y-2">
@@ -176,7 +188,8 @@
             <div v-if="showResultModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6">
                 <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeResult"></div>
                 <div class="relative w-full max-w-2xl bg-white rounded-t-[32px] sm:rounded-[32px] shadow-2xl max-h-[90vh] overflow-y-auto">
-                    <div v-if="!isNewItem" class="relative aspect-[16/9] cursor-pointer group" @click="isDetailZoomed = true">
+                    <!-- 根据 modalMode 判断显示内容 -->
+                    <div v-if="modalMode === 'view'" class="relative aspect-[16/9] cursor-pointer group" @click="isDetailZoomed = true">
                         <img :src="selectedItem.itemImage" class="w-full h-full object-cover">
                         <div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
                         <div class="absolute bottom-6 left-8 text-white">
@@ -184,8 +197,17 @@
                              <h3 class="text-2xl font-serif-sc">{{ selectedItem.name }}</h3>
                         </div>
                     </div>
+                    <!-- 新录入模式 (create) -->
+                    <div v-else class="relative aspect-[16/9] bg-slate-100">
+                        <img :src="selectedItem.itemImage" class="w-full h-full object-cover">
+                         <div class="absolute bottom-6 left-8 text-white z-10">
+                             <h3 class="text-2xl font-serif-sc drop-shadow-md">{{ selectedItem.name }}</h3>
+                        </div>
+                         <div class="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent pointer-events-none"></div>
+                    </div>
+
                     <div class="p-8 space-y-6 text-left">
-                        <div v-if="isNewItem" class="flex justify-between items-start">
+                        <div v-if="modalMode === 'create'" class="flex justify-between items-start">
                             <h3 class="text-2xl font-serif-sc text-slate-900">识别结果</h3>
                             <button @click="closeResult"><span v-html="getIcon('x', 'w-6 h-6 text-slate-300')"></span></button>
                         </div>
@@ -221,7 +243,8 @@
                             </div>
                         </div>
                         
-                        <div v-if="isNewItem" class="flex gap-4 pt-4">
+                        <!-- 底部按钮区：严格区分 create 和 view 模式 -->
+                        <div v-if="modalMode === 'create'" class="flex gap-4 pt-4">
                             <button @click="closeResult" class="flex-1 py-4 bg-slate-50 rounded-2xl font-bold text-slate-400 hover:bg-slate-100 transition-colors">暂不保存</button>
                             <button @click="saveToWardrobe" :disabled="isSaving" class="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl active:scale-95 transition-all">
                                 {{ isSaving ? '同步中...' : '确认入库' }}
@@ -288,7 +311,7 @@
             <footer v-if="currentView === 'home'" class="fixed bottom-0 left-0 right-0 p-8 flex justify-center z-20 pointer-events-none">
                 <button @click="goAdd" class="bg-slate-900 text-white px-8 py-4 rounded-full flex items-center gap-3 shadow-[0_20px_50px_rgba(0,0,0,0.3)] active:scale-95 transition-all pointer-events-auto border border-white/10">
                     <span v-html="getIcon('plus-circle', 'w-5 h-5')"></span>
-                    <span class="font-bold tracking-wide">添加新衣物识别</span>
+                    <span class="font-bold tracking-wide">添加新衣物分析</span>
                 </button>
             </footer>
         </template>
@@ -303,10 +326,10 @@
                 const isLoggedIn = ref(false);
                 const currentUser = ref(null);
                 const loginForm = ref({ username: '', password: '' });
+                const initialLoading = ref(false); 
                 
                 // 环境判断与调试模式
                 const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-                // 默认在 localhost 环境开启调试模式
                 const isLocalDebug = ref(isLocalHost); 
                 
                 const wardrobe = ref([]);
@@ -319,7 +342,7 @@
                 const showResultModal = ref(false);
                 const isDetailZoomed = ref(false);
                 const showSettings = ref(false);
-                const currentModel = ref('gemini-2.5-flash-preview-09-2025');
+                const currentModel = ref('gemini-2.5-flash-lite');
                 
                 // 配置
                 const config = ref({
@@ -329,7 +352,6 @@
                     fsTableId: 'tblanETFV7K3nptS'
                 });
 
-                // 计算当前的 Vercel Proxy URL
                 const currentVercelUrl = computed(() => {
                     return isLocalDebug.value 
                         ? 'http://localhost:3000/api/feishu' 
@@ -340,7 +362,8 @@
                 const currentLoadingSubMessage = ref('INITIALIZING');
                 let messageTimer = null;
 
-                const isNewItem = ref(false);
+                // 替换 isNewItem，使用更明确的 modalMode 状态：'create' 或 'view'
+                const modalMode = ref('view'); 
                 const newItem = ref({ name: '', itemImage: null, labelImages: [] });
                 const selectedItem = ref(null);
                 const currentAnalysis = ref(null);
@@ -353,7 +376,7 @@
                 
                 onMounted(() => {
                     checkLoginStatus();
-                    nextTick(() => lucide.createIcons());
+                    nextTick(() => window.lucide?.createIcons());
                 });
 
                 const checkLoginStatus = () => {
@@ -364,7 +387,7 @@
                             currentUser.value = userData;
                             applyUserConfig(userData.config);
                             isLoggedIn.value = true;
-                            syncFromFeishu(userData.user_id);
+                            syncFromFeishu(userData.user_id, true);
                         } catch (e) {
                             console.error("Cookie Parse Error", e);
                         }
@@ -402,7 +425,7 @@
                             document.cookie = `wardrobe_user=${encodeURIComponent(JSON.stringify(user))};expires=${d.toUTCString()};path=/`;
                             
                             isLoggedIn.value = true;
-                            syncFromFeishu(user.user_id);
+                            syncFromFeishu(user.user_id, true);
                         } else {
                             alert(data.msg || "登录失败");
                         }
@@ -453,17 +476,22 @@
                     return data;
                 };
 
-                const syncFromFeishu = async (userId) => {
+                const syncFromFeishu = async (userId, isInit = false, silent = false) => {
                     if (!userId) return;
-                    loading.value = true;
-                    currentLoadingMessage.value = "正在同步您的衣橱...";
-                    currentLoadingSubMessage.value = "SYNCING DATA";
+                    
+                    if (!silent) {
+                        if (isInit) initialLoading.value = true;
+                        else {
+                            loading.value = true;
+                            currentLoadingMessage.value = "正在同步您的衣橱...";
+                            currentLoadingSubMessage.value = "SYNCING DATA";
+                        }
+                    }
                     
                     try {
                         const filter = `CurrentValue.[user_id]="${userId}"`;
                         const targetUrl = new URL(currentVercelUrl.value);
                         targetUrl.searchParams.set('action', 'list_records');
-                        
                         
                         const res = await fetch(targetUrl.toString(), {
                             method: 'POST',
@@ -476,8 +504,9 @@
                         });
                         const data = await res.json();
 
-                        if (data.data && data.data.items) {
-                            const items = data.data.items.map(record => ({
+                        if (data.code === 0 && data.data) {
+                            const rawItems = data.data.items || [];
+                            const items = rawItems.map(record => ({
                                 record_id: record.record_id, 
                                 id: record.fields.uuid || record.record_id,
                                 name: record.fields.name,
@@ -487,24 +516,51 @@
                                 createdAt: record.fields.created_at || Date.now()
                             }));
                             wardrobe.value = items.sort((a, b) => b.createdAt - a.createdAt);
+                            localStorage.setItem('my_smart_wardrobe_data', JSON.stringify(wardrobe.value));
                         }
                     } catch (e) {
                         console.error(e);
                     } finally {
-                        loading.value = false;
+                        if (!silent) {
+                            if (isInit) initialLoading.value = false;
+                            else loading.value = false;
+                        }
                     }
                 };
 
                 // --- 通用 ---
-                const getIcon = (name, cls) => window.lucide?.icons[name]?.toSvg({ class: cls || 'w-5 h-5' }) || '';
+                const getIcon = (name, cls) => {
+                    // 安全检查：增加 try-catch 防止图标库报错中断 Vue 渲染
+                    try {
+                        if (window.lucide && window.lucide.icons && window.lucide.icons[name]) {
+                            return window.lucide.icons[name].toSvg({ class: cls || 'w-5 h-5' });
+                        }
+                    } catch (e) {
+                        console.warn('Icon render failed:', name);
+                    }
+                    return ''; 
+                };
+                
                 const getThumbnail = (url) => url?.replace('/upload/', '/upload/w_200,h_200,c_fill,q_auto/') || url;
-                const changeViewMode = (m) => { viewMode.value = m; localStorage.setItem('wardrobe_view_mode', m); nextTick(() => lucide.createIcons()); };
-                const goHome = () => { currentView.value = 'home'; isNewItem.value = false; nextTick(() => lucide.createIcons()); };
-                const goAdd = () => { currentView.value = 'add'; nextTick(() => lucide.createIcons()); };
+                const changeViewMode = (m) => { viewMode.value = m; localStorage.setItem('wardrobe_view_mode', m); nextTick(() => window.lucide?.createIcons()); };
+                const goHome = () => { currentView.value = 'home'; modalMode.value = 'view'; nextTick(() => window.lucide?.createIcons()); };
+                const goAdd = () => { currentView.value = 'add'; nextTick(() => window.lucide?.createIcons()); };
                 const triggerFile = (type) => (type === 'itemImage' ? itemImageInput : labelImageInput).value.click();
-                const closeResult = () => { if(!loading.value) { showResultModal.value = false; selectedItem.value = null; } };
+                const closeResult = () => { 
+                    if(!loading.value && !isSaving.value) { 
+                        showResultModal.value = false; 
+                        selectedItem.value = null; 
+                    } 
+                };
 
-                // 文件处理
+                const showDetail = (item) => {
+                    selectedItem.value = item;
+                    currentAnalysis.value = item.analysis;
+                    modalMode.value = 'view'; // 明确设置为查看模式
+                    showResultModal.value = true;
+                    nextTick(() => window.lucide?.createIcons());
+                }
+
                 const handleFile = (e, type) => {
                     const file = e.target.files[0];
                     if (!file) return;
@@ -526,7 +582,6 @@
                     reader.readAsDataURL(file);
                 };
 
-                // Gemini 分析
                 const analyzeMessages = [
                     { title: "正在识别水洗标中的面料成分...", sub: "Fiber Recognition" },
                     { title: "正在基于面料成分评估洗护注意事项...", sub: "Care Assessment" },
@@ -546,7 +601,6 @@
                     }, 2200);
 
                     try {
-                        // 1. Gemini
                         const b64s = newItem.value.labelImages.map(i => i.split(',')[1]);
                         const payload = {
                             contents: [{ parts: [{ text: "分析衣服..." }, ...b64s.map(b => ({ inlineData: { mimeType: "image/jpeg", data: b } }))] }],
@@ -572,21 +626,51 @@ JSON 结构：
                         const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel.value}:generateContent?key=${config.value.geminiKey}`;
                         const geminiRes = await fetch(url, { method: 'POST', body: JSON.stringify(payload) });
                         const geminiData = await geminiRes.json();
-                        currentAnalysis.value = JSON.parse(geminiData.candidates[0].content.parts[0].text);
+                        
+                        let text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (!text) throw new Error("API Returned Empty Response");
+                        
+                        const jsonMatch = text.match(/\{[\s\S]*\}/);
+                        const jsonStr = jsonMatch ? jsonMatch[0] : text;
+                        
+                        const analysisResult = JSON.parse(jsonStr);
+                        currentAnalysis.value = analysisResult;
 
-                        // 2. Cloudinary
-                        const form = new FormData();
-                        form.append('file', newItem.value.itemImage);
-                        form.append('upload_preset', config.value.clUploadPreset);
-                        form.append('api_key', config.value.clApiKey);
-                        const clRes = await fetch(`https://api.cloudinary.com/v1_1/${config.value.clCloudName}/image/upload`, { method: 'POST', body: form });
-                        const clData = await clRes.json();
+                        // 设置预览数据
+                        selectedItem.value = {
+                            name: newItem.value.name,
+                            itemImage: newItem.value.itemImage,
+                            analysis: analysisResult
+                        };
+                        
+                        // 关键修改：显式设置为创建模式，避免布尔值逻辑错误
+                        modalMode.value = 'create'; 
+                        showResultModal.value = true;
+                        
+                        // 确保图标重绘，防止界面卡顿
+                        nextTick(() => window.lucide?.createIcons());
 
-                        // 3. Feishu Save
+                    } catch (e) {
+                        console.error("Analysis Error:", e);
+                        alert("处理失败: " + e.message);
+                    } finally {
+                        clearInterval(timer);
+                        loading.value = false;
+                    }
+                };
+
+                const saveToWardrobe = async () => {
+                    isSaving.value = true;
+                    currentLoadingMessage.value = "正在同步云端档案...";
+                    currentLoadingSubMessage.value = "Cloud Syncing";
+                    
+                    try {
+                        const uploadRes = await uploadToCloudinary(newItem.value.itemImage);
+                        
                         const itemData = {
                             name: newItem.value.name,
-                            itemImage: clData.secure_url,
-                            publicId: clData.public_id,
+                            itemImage: uploadRes.url,
+                            publicId: uploadRes.publicId,
                             analysis: currentAnalysis.value,
                             createdAt: Date.now(),
                             id: crypto.randomUUID()
@@ -603,14 +687,15 @@ JSON 结构：
                                 user_id: currentUser.value.user_id 
                             }
                         });
-                        
+
                         await syncFromFeishu(currentUser.value.user_id);
+                        showResultModal.value = false;
                         goHome();
+                        
                     } catch (e) {
-                        alert("处理失败: " + e.message);
+                        alert("同步失败: " + e.message);
                     } finally {
-                        clearInterval(timer);
-                        loading.value = false;
+                        isSaving.value = false;
                     }
                 };
 
@@ -642,7 +727,6 @@ JSON 结构：
                     } catch (e) { return false; }
                 };
 
-                // 替换封面
                 const handleReplaceCover = async (e) => {
                     const file = e.target.files[0];
                     if (!file) return;
@@ -654,14 +738,12 @@ JSON 结构：
                         reader.readAsDataURL(file);
                         await new Promise(r => reader.onload = r);
                         
-                        // Upload New
                         const form = new FormData();
                         form.append('file', reader.result);
                         form.append('upload_preset', config.value.clUploadPreset);
                         const clRes = await fetch(`https://api.cloudinary.com/v1_1/${config.value.clCloudName}/image/upload`, { method: 'POST', body: form });
                         const clData = await clRes.json();
 
-                        // Update Feishu
                         if (selectedItem.value.record_id) {
                             await callVercelProxy('update_record', {
                                 record_id: selectedItem.value.record_id,
@@ -669,7 +751,6 @@ JSON 结构：
                             });
                         }
                         
-                        // Update Local
                         selectedItem.value.itemImage = clData.secure_url;
                         isDetailZoomed.value = false;
                         await syncFromFeishu(currentUser.value.user_id);
@@ -684,7 +765,6 @@ JSON 结构：
                     currentLoadingSubMessage.value = "Cloud Purging";
                     const item = selectedItem.value;
                     try {
-                        // Delete image from Cloudinary
                         if (item.publicId && config.value.clApiKey && config.value.clApiSecret) {
                             await deleteFromCloudinary(item.publicId);
                         }
@@ -733,14 +813,15 @@ JSON 结构：
                 const isReadyToAnalyze = computed(() => newItem.value.name && newItem.value.itemImage && newItem.value.labelImages.length > 0);
 
                 return {
-                    isLoggedIn, currentUser, loginForm, isLocalDebug,
+                    isLoggedIn, currentUser, loginForm, isLocalDebug, initialLoading,
                     wardrobe, currentView, viewMode, currentModel,
-                    loading, isDeleting, isReplacing, currentLoadingMessage, currentLoadingSubMessage,
+                    loading, isSaving, isDeleting, isReplacing, currentLoadingMessage, currentLoadingSubMessage,
                     newItem, selectedItem, showResultModal, isDetailZoomed, currentAnalysis, parsedComposition, isReadyToAnalyze,
                     itemImageInput, labelImageInput, replaceCoverInput,
-                    goHome, goAdd, getIcon, getThumbnail, changeViewMode, triggerFile, handleFile, startAnalysis,
+                    goHome, goAdd, getIcon, getThumbnail, changeViewMode, triggerFile, handleFile, startAnalysis, saveToWardrobe,
                     closeResult, deleteItem, triggerReplaceCover: () => replaceCoverInput.value.click(), handleReplaceCover,
-                    handleLogin, handleLogout, showSettings // 仅用于debug
+                    handleLogin, handleLogout, showSettings, showDetail,
+                    modalMode // 导出新状态
                 };
             }
         }).mount('#app');
